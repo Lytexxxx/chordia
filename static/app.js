@@ -932,41 +932,57 @@ function handleSettingsAvatarUpload(e) {
 function handleSettingsBannerUpload(e) {
     const file = e.target.files[0];
     if (file) {
-        const formData = new FormData();
-        formData.append('banner', file);
-        formData.append('username', currentUsername);
+        // Valider le type de fichier
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+        if (!allowedTypes.includes(file.type)) {
+            alert('Seuls les fichiers JPEG, JPG, PNG et GIF sont autorisés');
+            return;
+        }
 
-        fetch('/upload_banner', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                const bannerPreview = document.getElementById('settings-banner-preview');
-                bannerPreview.style.backgroundImage = `url(${data.bannerUrl})`;
-                bannerPreview.style.backgroundSize = 'cover';
-                bannerPreview.style.backgroundPosition = 'center';
-                userSettings.bannerImage = data.bannerUrl;
+        // Valider la taille du fichier (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            alert('L\'image ne doit pas dépasser 5MB');
+            return;
+        }
 
-                // Sauvegarder dans localStorage
-                localStorage.setItem('userSettings', JSON.stringify(userSettings));
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const bannerBase64 = event.target.result;
 
-                // Mettre à jour la bannière de l'utilisateur actuel dans la liste des utilisateurs
-                if (users[currentUsername]) {
-                    users[currentUsername].bannerImage = data.bannerUrl;
+            fetch('/upload_banner', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: currentUsername, bannerImage: bannerBase64 })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const bannerPreview = document.getElementById('settings-banner-preview');
+                    bannerPreview.style.backgroundImage = `url(${data.bannerUrl})`;
+                    bannerPreview.style.backgroundSize = 'cover';
+                    bannerPreview.style.backgroundPosition = 'center';
+                    userSettings.bannerImage = data.bannerUrl;
+
+                    // Sauvegarder dans localStorage
+                    localStorage.setItem('userSettings', JSON.stringify(userSettings));
+
+                    // Mettre à jour la bannière de l'utilisateur actuel dans la liste des utilisateurs
+                    if (users[currentUsername]) {
+                        users[currentUsername].bannerImage = data.bannerUrl;
+                    }
+
+                    // Recharger la liste des utilisateurs pour appliquer la nouvelle bannière
+                    loadUsers();
+                } else {
+                    alert('Erreur lors de l\'upload de la bannière: ' + data.message);
                 }
-
-                // Recharger la liste des utilisateurs pour appliquer la nouvelle bannière
-                loadUsers();
-            } else {
-                alert('Erreur lors de l\'upload de la bannière: ' + data.message);
-            }
-        })
-        .catch(error => {
-            console.error('Erreur lors de l\'upload de la bannière:', error);
-            alert('Erreur lors de l\'upload de la bannière');
-        });
+            })
+            .catch(error => {
+                console.error('Erreur lors de l\'upload de la bannière:', error);
+                alert('Erreur lors de l\'upload de la bannière');
+            });
+        };
+        reader.readAsDataURL(file);
     }
 }
 

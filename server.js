@@ -4,7 +4,6 @@ const socketIO = require('socket.io');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const multer = require('multer');
 
 const app = express();
 const server = http.createServer(app);
@@ -16,40 +15,7 @@ const io = socketIO(server, {
 });
 
 app.use(cors());
-app.use(express.json());
-
-// Configuration de multer pour l'upload d'images
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const uploadDir = path.join(__dirname, 'uploads', 'banners');
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-        }
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + path.extname(file.originalname));
-    }
-});
-
-const upload = multer({
-    storage: storage,
-    limits: {
-        fileSize: 5 * 1024 * 1024 // 5MB max
-    },
-    fileFilter: (req, file, cb) => {
-        const allowedTypes = /jpeg|jpg|png|gif/;
-        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-        const mimetype = allowedTypes.test(file.mimetype);
-        
-        if (extname && mimetype) {
-            return cb(null, true);
-        } else {
-            cb(new Error('Seuls les fichiers JPEG, JPG, PNG et GIF sont autorisés'));
-        }
-    }
-});
+app.use(express.json({ limit: '10mb' }));
 
 // Servir les fichiers statiques
 const staticPath = path.join(__dirname, 'static');
@@ -60,9 +26,6 @@ app.use('/static', express.static(staticPath));
 app.get('/logo.png', (req, res) => {
     res.sendFile(path.join(__dirname, 'logo.png'));
 });
-
-// Servir les images uploadées
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Stockage en mémoire pour la version locale
 const users = {};
@@ -353,22 +316,27 @@ app.post('/update_profile', (req, res) => {
     res.json({ success: true, user: users[username] });
 });
 
-// Upload de bannière de profil
-app.post('/upload_banner', upload.single('banner'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ success: false, message: "Aucun fichier uploadé" });
-    }
+// Upload de bannière de profil (base64 pour Render)
+app.post('/upload_banner', (req, res) => {
+    const { username, bannerImage } = req.body;
 
-    const { username } = req.body;
     if (!username || !users[username]) {
         return res.status(404).json({ success: false, message: "Utilisateur non trouvé" });
     }
 
-    const bannerUrl = `/uploads/banners/${req.file.filename}`;
-    users[username].bannerImage = bannerUrl;
+    if (!bannerImage) {
+        return res.status(400).json({ success: false, message: "Aucune image de bannière fournie" });
+    }
+
+    // Valider que c'est une image base64
+    if (!bannerImage.startsWith('data:image/')) {
+        return res.status(400).json({ success: false, message: "Format d'image invalide" });
+    }
+
+    users[username].bannerImage = bannerImage;
     saveUsersToFile();
 
-    res.json({ success: true, bannerUrl: bannerUrl });
+    res.json({ success: true, bannerUrl: bannerImage });
 });
 
 // Changer le mot de passe utilisateur
