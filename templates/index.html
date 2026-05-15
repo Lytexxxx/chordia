@@ -100,7 +100,7 @@
                     </div>
                 </div>
                 <div class="profile-sidebar" id="profile-sidebar">
-                    <div class="profile-sidebar-banner"></div>
+                    <div class="profile-sidebar-banner" id="sidebar-profile-banner"></div>
                     <div class="profile-sidebar-content">
                         <div class="profile-sidebar-header">
                             <button class="close-sidebar-btn" id="close-profile-sidebar">✕</button>
@@ -268,6 +268,14 @@
                     <div class="settings-section">
                         <h4>Profil</h4>
                         <div class="settings-item">
+                            <label>Bannière de profil</label>
+                            <div class="banner-upload-container">
+                                <div class="banner-preview" id="settings-banner-preview"></div>
+                                <button class="upload-banner-btn" id="settings-upload-banner-btn">🖼️ Changer la bannière</button>
+                                <input type="file" id="settings-banner-input" accept=".png,.jpg,.jpeg,.gif" style="display: none;">
+                            </div>
+                        </div>
+                        <div class="settings-item">
                             <label>Photo de profil</label>
                             <div class="avatar-upload-container">
                                 <div class="avatar-preview" id="settings-avatar-preview">
@@ -363,7 +371,7 @@
         <!-- Modal de profil utilisateur -->
         <div id="profile-modal" class="modal hidden">
             <div class="modal-content profile-modal-content">
-                <div class="profile-banner" id="profile-banner">
+                <div class="profile-banner" id="profile-modal-banner">
                     <button class="close-modal-btn" id="close-profile-btn">✕</button>
                 </div>
                 <div class="profile-info">

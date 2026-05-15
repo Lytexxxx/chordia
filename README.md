@@ -16,7 +16,7 @@ npm start
 
 Ou double-cliquez sur `start.bat`
 
-3. Ouvrir votre navigateur sur: http://localhost:5000
+3. Ouvrir votre navigateur sur: https://chordia.onrender.com/
 
 ## Fonctionnalités
 

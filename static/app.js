@@ -16,7 +16,8 @@ let userSettings = savedSettings ? JSON.parse(savedSettings) : {
     status: 'online',
     theme: 'dark',
     bio: '',
-    avatarImage: null
+    avatarImage: null,
+    bannerImage: null
 };
 let users = {};
 let servers = {};
@@ -75,7 +76,7 @@ function setupEventListeners() {
         document.getElementById('settings-theme').value = userSettings.theme;
         document.getElementById('settings-bio').value = userSettings.bio || '';
         document.getElementById('settings-avatar-text').textContent = currentDisplayname.charAt(0).toUpperCase();
-        
+
         // Restaurer l'avatar si une photo a été uploadée
         if (userSettings.avatarImage) {
             const avatarPreview = document.getElementById('settings-avatar-preview');
@@ -84,15 +85,33 @@ function setupEventListeners() {
             avatarPreview.style.backgroundPosition = 'center';
             document.getElementById('settings-avatar-text').style.display = 'none';
         }
-        
-        console.log('settings ouvert, bio:', userSettings.bio, 'avatarImage:', userSettings.avatarImage);
+
+        // Restaurer la bannière si une image a été uploadée
+        if (userSettings.bannerImage) {
+            const bannerPreview = document.getElementById('settings-banner-preview');
+            bannerPreview.style.backgroundImage = `url(${userSettings.bannerImage})`;
+            bannerPreview.style.backgroundSize = 'cover';
+            bannerPreview.style.backgroundPosition = 'center';
+        } else {
+            const bannerPreview = document.getElementById('settings-banner-preview');
+            bannerPreview.style.backgroundImage = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+        }
+
+        console.log('settings ouvert, bio:', userSettings.bio, 'avatarImage:', userSettings.avatarImage, 'bannerImage:', userSettings.bannerImage);
     });
     
     document.getElementById('settings-upload-avatar-btn').addEventListener('click', () => {
         document.getElementById('settings-avatar-input').click();
     });
-    
+
     document.getElementById('settings-avatar-input').addEventListener('change', handleSettingsAvatarUpload);
+
+    // Banner upload
+    document.getElementById('settings-upload-banner-btn').addEventListener('click', () => {
+        document.getElementById('settings-banner-input').click();
+    });
+
+    document.getElementById('settings-banner-input').addEventListener('change', handleSettingsBannerUpload);
     
     document.getElementById('close-settings-btn').addEventListener('click', () => {
         document.getElementById('settings-modal').classList.add('hidden');
@@ -878,15 +897,15 @@ function handleSettingsAvatarUpload(e) {
             avatarPreview.style.backgroundPosition = 'center';
             document.getElementById('settings-avatar-text').style.display = 'none';
             userSettings.avatarImage = event.target.result;
-            
+
             // Sauvegarder dans localStorage
             localStorage.setItem('userSettings', JSON.stringify(userSettings));
-            
+
             // Mettre à jour l'avatar de l'utilisateur actuel dans la liste des utilisateurs
             if (users[currentUsername]) {
                 users[currentUsername].avatarImage = event.target.result;
             }
-            
+
             // Mettre à jour l'avatar en bas à gauche
             const userAvatar = document.getElementById('user-avatar');
             if (userAvatar) {
@@ -895,18 +914,59 @@ function handleSettingsAvatarUpload(e) {
                 userAvatar.style.backgroundPosition = 'center';
                 document.getElementById('user-avatar-text').style.display = 'none';
             }
-            
+
             // Envoyer la mise à jour au backend
             fetch('/update_profile', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: currentUsername, avatarImage: event.target.result })
             });
-            
+
             // Recharger la liste des utilisateurs pour appliquer la nouvelle photo
             loadUsers();
         };
         reader.readAsDataURL(file);
+    }
+}
+
+function handleSettingsBannerUpload(e) {
+    const file = e.target.files[0];
+    if (file) {
+        const formData = new FormData();
+        formData.append('banner', file);
+        formData.append('username', currentUsername);
+
+        fetch('/upload_banner', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const bannerPreview = document.getElementById('settings-banner-preview');
+                bannerPreview.style.backgroundImage = `url(${data.bannerUrl})`;
+                bannerPreview.style.backgroundSize = 'cover';
+                bannerPreview.style.backgroundPosition = 'center';
+                userSettings.bannerImage = data.bannerUrl;
+
+                // Sauvegarder dans localStorage
+                localStorage.setItem('userSettings', JSON.stringify(userSettings));
+
+                // Mettre à jour la bannière de l'utilisateur actuel dans la liste des utilisateurs
+                if (users[currentUsername]) {
+                    users[currentUsername].bannerImage = data.bannerUrl;
+                }
+
+                // Recharger la liste des utilisateurs pour appliquer la nouvelle bannière
+                loadUsers();
+            } else {
+                alert('Erreur lors de l\'upload de la bannière: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Erreur lors de l\'upload de la bannière:', error);
+            alert('Erreur lors de l\'upload de la bannière');
+        });
     }
 }
 
@@ -1015,13 +1075,13 @@ function showProfile(user) {
     document.getElementById('profile-displayname').textContent = user.displayname;
     document.getElementById('profile-username').textContent = '@' + user.username;
     document.getElementById('profile-avatar-text').textContent = user.displayname.charAt(0).toUpperCase();
-    
+
     // Afficher la bio de l'utilisateur concerné
     const bio = user.bio || '';
     const bioElement = document.getElementById('profile-bio');
     bioElement.textContent = bio || '';
     bioElement.style.display = bio ? 'block' : 'none';
-    
+
     // Appliquer la photo de profil de l'utilisateur concerné
     const avatarImage = user.avatarImage || (user.username === currentUsername ? userSettings.avatarImage : null);
     if (avatarImage) {
@@ -1035,7 +1095,18 @@ function showProfile(user) {
         profileAvatar.style.backgroundImage = '';
         document.getElementById('profile-avatar-text').style.display = 'flex';
     }
-    
+
+    // Appliquer la bannière de profil de l'utilisateur concerné
+    const bannerImage = user.bannerImage || (user.username === currentUsername ? userSettings.bannerImage : null);
+    const profileBanner = document.getElementById('profile-modal-banner');
+    if (bannerImage) {
+        profileBanner.style.backgroundImage = `url(${bannerImage})`;
+        profileBanner.style.backgroundSize = 'cover';
+        profileBanner.style.backgroundPosition = 'center';
+    } else {
+        profileBanner.style.backgroundImage = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+    }
+
     // Afficher le statut de l'utilisateur
     const status = user.status || 'offline';
     let statusColor = '#747f8d'; // offline
@@ -1050,17 +1121,17 @@ function showProfile(user) {
         statusColor = '#ed4245';
         statusText = 'Ne pas déranger';
     }
-    
+
     const statusIndicator = document.getElementById('profile-status-indicator');
     statusIndicator.style.background = statusColor;
-    
+
     const statusTextElement = document.getElementById('profile-status-text');
     statusTextElement.textContent = statusText;
     statusTextElement.style.display = 'block';
-    
+
     document.getElementById('profile-modal').classList.remove('hidden');
-    
-    console.log('showProfile appelé pour:', user.username, 'bio:', user.bio, 'avatarImage:', user.avatarImage, 'status:', status);
+
+    console.log('showProfile appelé pour:', user.username, 'bio:', user.bio, 'avatarImage:', user.avatarImage, 'bannerImage:', user.bannerImage, 'status:', status);
 }
 
 
@@ -1769,12 +1840,12 @@ async function removeInvite(username) {
 async function showProfileSidebar(user) {
     const sidebar = document.getElementById('profile-sidebar');
     const toolbar = document.getElementById('private-chat-toolbar');
-    
+
     // Populate sidebar with user data
     document.getElementById('sidebar-profile-displayname').textContent = user.displayname;
     document.getElementById('sidebar-profile-username').textContent = '@' + user.username + '#' + user.username.substring(0, 4);
     document.getElementById('sidebar-profile-avatar-text').textContent = user.displayname.charAt(0).toUpperCase();
-    
+
     // Apply avatar image if available
     const avatarImage = user.avatarImage || (user.username === currentUsername ? userSettings.avatarImage : null);
     if (avatarImage) {
@@ -1788,7 +1859,18 @@ async function showProfileSidebar(user) {
         sidebarAvatar.style.backgroundImage = '';
         document.getElementById('sidebar-profile-avatar-text').style.display = 'flex';
     }
-    
+
+    // Apply banner image if available
+    const bannerImage = user.bannerImage || (user.username === currentUsername ? userSettings.bannerImage : null);
+    const sidebarBanner = document.getElementById('sidebar-profile-banner');
+    if (bannerImage) {
+        sidebarBanner.style.backgroundImage = `url(${bannerImage})`;
+        sidebarBanner.style.backgroundSize = 'cover';
+        sidebarBanner.style.backgroundPosition = 'center';
+    } else {
+        sidebarBanner.style.backgroundImage = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+    }
+
     // Set status indicator
     const status = user.status || 'offline';
     let statusColor = '#747f8d';
@@ -1800,7 +1882,7 @@ async function showProfileSidebar(user) {
         statusColor = '#ed4245';
     }
     document.getElementById('sidebar-profile-status-indicator').style.background = statusColor;
-    
+
     // Get account creation date from logs-login.txt
     const accountCreationDate = await getAccountCreationDate(user.username);
     if (accountCreationDate) {
@@ -1811,22 +1893,22 @@ async function showProfileSidebar(user) {
         });
         document.getElementById('sidebar-profile-joined').textContent = formattedDate;
     }
-    
+
     // Calculate and set mutual servers with real names
     const mutualServers = await calculateMutualServers(user.username);
     document.getElementById('sidebar-profile-mutual-servers').textContent = mutualServers.length;
-    
+
     // Calculate and set mutual friends (async)
     const mutualFriendsCount = await calculateMutualFriends(user.username);
     document.getElementById('sidebar-profile-mutual-friends').textContent = mutualFriendsCount;
-    
+
     // Set friends since date (if they are friends)
     const friendsSinceDate = getFriendsSinceDate(user.username);
     document.getElementById('sidebar-profile-friends-since').textContent = friendsSinceDate;
-    
+
     // Add badges
     addBadgesToSidebar(user);
-    
+
     // Show sidebar and toolbar
     sidebar.classList.add('visible');
     toolbar.classList.add('visible');

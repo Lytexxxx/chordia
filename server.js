@@ -4,6 +4,7 @@ const socketIO = require('socket.io');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
 
 const app = express();
 const server = http.createServer(app);
@@ -17,6 +18,39 @@ const io = socketIO(server, {
 app.use(cors());
 app.use(express.json());
 
+// Configuration de multer pour l'upload d'images
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadDir = path.join(__dirname, 'uploads', 'banners');
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB max
+    },
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png|gif/;
+        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        const mimetype = allowedTypes.test(file.mimetype);
+        
+        if (extname && mimetype) {
+            return cb(null, true);
+        } else {
+            cb(new Error('Seuls les fichiers JPEG, JPG, PNG et GIF sont autorisés'));
+        }
+    }
+});
+
 // Servir les fichiers statiques
 const staticPath = path.join(__dirname, 'static');
 console.log('Serving static files from:', staticPath);
@@ -26,6 +60,9 @@ app.use('/static', express.static(staticPath));
 app.get('/logo.png', (req, res) => {
     res.sendFile(path.join(__dirname, 'logo.png'));
 });
+
+// Servir les images uploadées
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Stockage en mémoire pour la version locale
 const users = {};
@@ -56,7 +93,7 @@ function loadUsersFromFile() {
             const data = fs.readFileSync(loginLogFile, 'utf8');
             const lines = data.split('\n').filter(line => line.trim());
             lines.forEach(line => {
-                const [username, displayname, password, timestamp, bio, avatarImage] = line.split('|');
+                const [username, displayname, password, timestamp, bio, avatarImage, bannerImage] = line.split('|');
                 if (username && displayname && password) {
                     users[username] = {
                         username: username,
@@ -65,7 +102,8 @@ function loadUsersFromFile() {
                         status: 'offline',
                         joinedAt: timestamp || new Date().toISOString(),
                         bio: bio || '',
-                        avatarImage: avatarImage || null
+                        avatarImage: avatarImage || null,
+                        bannerImage: bannerImage || null
                     };
                 }
             });
@@ -77,10 +115,10 @@ function loadUsersFromFile() {
 }
 
 // Sauvegarder un utilisateur dans le fichier
-function saveUserToFile(username, displayname, password, bio = '', avatarImage = null) {
+function saveUserToFile(username, displayname, password, bio = '', avatarImage = null, bannerImage = null) {
     try {
         const timestamp = new Date().toISOString();
-        const line = `${username}|${displayname}|${password}|${timestamp}|${bio}|${avatarImage || ''}\n`;
+        const line = `${username}|${displayname}|${password}|${timestamp}|${bio}|${avatarImage || ''}|${bannerImage || ''}\n`;
         fs.appendFileSync(loginLogFile, line);
         console.log(`Utilisateur ${username} (${displayname}) enregistré dans logs-login`);
     } catch (error) {
@@ -92,7 +130,7 @@ function saveUserToFile(username, displayname, password, bio = '', avatarImage =
 function saveUsersToFile() {
     try {
         const lines = Object.values(users).map(user => {
-            return `${user.username}|${user.displayname}|${user.password}|${user.joinedAt || new Date().toISOString()}|${user.bio || ''}|${user.avatarImage || ''}`;
+            return `${user.username}|${user.displayname}|${user.password}|${user.joinedAt || new Date().toISOString()}|${user.bio || ''}|${user.avatarImage || ''}|${user.bannerImage || ''}`;
         });
         fs.writeFileSync(loginLogFile, lines.join('\n') + '\n');
         console.log(`Sauvegardé ${Object.keys(users).length} utilisateurs dans logs-login`);
@@ -191,7 +229,8 @@ app.get('/users', (req, res) => {
         displayname: user.displayname,
         status: user.status,
         bio: user.bio || '',
-        avatarImage: user.avatarImage || null
+        avatarImage: user.avatarImage || null,
+        bannerImage: user.bannerImage || null
     }));
     res.json(usersList);
 });
@@ -289,12 +328,12 @@ app.post('/create_room', (req, res) => {
 
 // Mettre à jour le profil utilisateur
 app.post('/update_profile', (req, res) => {
-    const { username, displayname, bio, avatarImage } = req.body;
-    
+    const { username, displayname, bio, avatarImage, bannerImage } = req.body;
+
     if (!users[username]) {
         return res.status(404).json({ success: false, message: "Utilisateur non trouvé" });
     }
-    
+
     if (displayname) {
         users[username].displayname = displayname;
     }
@@ -304,11 +343,32 @@ app.post('/update_profile', (req, res) => {
     if (avatarImage !== undefined) {
         users[username].avatarImage = avatarImage;
     }
-    
+    if (bannerImage !== undefined) {
+        users[username].bannerImage = bannerImage;
+    }
+
     // Mettre à jour le fichier logs-login.txt
     saveUsersToFile();
-    
+
     res.json({ success: true, user: users[username] });
+});
+
+// Upload de bannière de profil
+app.post('/upload_banner', upload.single('banner'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ success: false, message: "Aucun fichier uploadé" });
+    }
+
+    const { username } = req.body;
+    if (!username || !users[username]) {
+        return res.status(404).json({ success: false, message: "Utilisateur non trouvé" });
+    }
+
+    const bannerUrl = `/uploads/banners/${req.file.filename}`;
+    users[username].bannerImage = bannerUrl;
+    saveUsersToFile();
+
+    res.json({ success: true, bannerUrl: bannerUrl });
 });
 
 // Changer le mot de passe utilisateur
@@ -347,8 +407,8 @@ function updateUserInFile(username) {
         const updatedLines = lines.map(line => {
             const parts = line.split('|');
             if (parts[0] === username) {
-                const [u, d, p, t, b, a] = parts;
-                return `${u}|${d}|${p}|${t}|${users[username].bio || ''}|${users[username].avatarImage || ''}`;
+                const [u, d, p, t, b, a, banner] = parts;
+                return `${u}|${d}|${p}|${t}|${users[username].bio || ''}|${users[username].avatarImage || ''}|${users[username].bannerImage || ''}`;
             }
             return line;
         });
@@ -597,7 +657,8 @@ app.get('/friends/:username', (req, res) => {
                 displayname: user.displayname,
                 status: user.status,
                 bio: user.bio || '',
-                avatarImage: user.avatarImage || null
+                avatarImage: user.avatarImage || null,
+                bannerImage: user.bannerImage || null
             };
         }
         return null;
