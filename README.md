@@ -37,5 +37,3 @@ Ou double-cliquez sur `start.bat`
 - 📞 Appels vocaux
 - 📹 Appels vidéo
 - 📁 Partage de fichiers
-- 🎨 Personnalisation des profils
-- 🔐 Authentification sécurisée
