@@ -48,8 +48,7 @@ async function initializeDatabase() {
                 name VARCHAR(255) NOT NULL,
                 creator VARCHAR(255) NOT NULL,
                 logo TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (creator) REFERENCES users(username) ON DELETE CASCADE
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
 
@@ -61,9 +60,7 @@ async function initializeDatabase() {
                 name VARCHAR(255) NOT NULL,
                 creator VARCHAR(255) NOT NULL,
                 type VARCHAR(50) DEFAULT 'text',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
-                FOREIGN KEY (creator) REFERENCES users(username) ON DELETE CASCADE
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
 
@@ -74,9 +71,7 @@ async function initializeDatabase() {
                 room_id VARCHAR(255) NOT NULL,
                 username VARCHAR(255) NOT NULL,
                 message TEXT NOT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
-                FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
 
@@ -85,9 +80,7 @@ async function initializeDatabase() {
             CREATE TABLE IF NOT EXISTS friends (
                 username VARCHAR(255) NOT NULL,
                 friend_username VARCHAR(255) NOT NULL,
-                PRIMARY KEY (username, friend_username),
-                FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE,
-                FOREIGN KEY (friend_username) REFERENCES users(username) ON DELETE CASCADE
+                PRIMARY KEY (username, friend_username)
             );
         `);
 
@@ -97,9 +90,7 @@ async function initializeDatabase() {
                 from_username VARCHAR(255) NOT NULL,
                 to_username VARCHAR(255) NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (from_username, to_username),
-                FOREIGN KEY (from_username) REFERENCES users(username) ON DELETE CASCADE,
-                FOREIGN KEY (to_username) REFERENCES users(username) ON DELETE CASCADE
+                PRIMARY KEY (from_username, to_username)
             );
         `);
 
@@ -110,9 +101,7 @@ async function initializeDatabase() {
                 from_username VARCHAR(255) NOT NULL,
                 to_username VARCHAR(255) NOT NULL,
                 message TEXT NOT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (from_username) REFERENCES users(username) ON DELETE CASCADE,
-                FOREIGN KEY (to_username) REFERENCES users(username) ON DELETE CASCADE
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
 
@@ -123,8 +112,7 @@ async function initializeDatabase() {
                 server_id VARCHAR(255) NOT NULL,
                 name VARCHAR(255) NOT NULL,
                 color VARCHAR(50) DEFAULT '#5865f2',
-                permissions TEXT[],
-                FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+                permissions TEXT[]
             );
         `);
 
@@ -132,8 +120,7 @@ async function initializeDatabase() {
         await pool.query(`
             CREATE TABLE IF NOT EXISTS server_permissions (
                 server_id VARCHAR(255) PRIMARY KEY,
-                permissions JSON,
-                FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+                permissions JSON
             );
         `);
 
@@ -143,9 +130,7 @@ async function initializeDatabase() {
                 server_id VARCHAR(255) NOT NULL,
                 username VARCHAR(255) NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (server_id, username),
-                FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
-                FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+                PRIMARY KEY (server_id, username)
             );
         `);
 
@@ -155,9 +140,7 @@ async function initializeDatabase() {
                 server_id VARCHAR(255) NOT NULL,
                 username VARCHAR(255) NOT NULL,
                 joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (server_id, username),
-                FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
-                FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+                PRIMARY KEY (server_id, username)
             );
         `);
 
@@ -166,15 +149,14 @@ async function initializeDatabase() {
             CREATE TABLE IF NOT EXISTS room_members (
                 room_id VARCHAR(255) NOT NULL,
                 username VARCHAR(255) NOT NULL,
-                PRIMARY KEY (room_id, username),
-                FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
-                FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+                PRIMARY KEY (room_id, username)
             );
         `);
 
         console.log('Database tables initialized successfully');
     } catch (error) {
         console.error('Error initializing database:', error);
+        throw error;
     }
 }
 
@@ -186,6 +168,11 @@ app.use('/static', express.static(staticPath));
 // Servir le logo depuis la racine
 app.get('/logo.png', (req, res) => {
     res.sendFile(path.join(__dirname, 'logo.png'));
+});
+
+// Health check endpoint for Render
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Stockage en mémoire pour la version locale (cache)
@@ -1380,11 +1367,22 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
-    await initializeDatabase();
-    await loadAllData();
-    server.listen(PORT, () => {
-        console.log(`Serveur Chordia démarré sur le port ${PORT}`);
-    });
+    try {
+        console.log('Initializing database...');
+        await initializeDatabase();
+        console.log('Loading data from database...');
+        await loadAllData();
+        console.log('Starting server...');
+        server.listen(PORT, () => {
+            console.log(`Serveur Chordia démarré sur le port ${PORT}`);
+        });
+    } catch (error) {
+        console.error('Error during server startup:', error);
+        console.log('Starting server anyway (some features may not work)...');
+        server.listen(PORT, () => {
+            console.log(`Serveur Chordia démarré sur le port ${PORT} (with errors)`);
+        });
+    }
 }
 
 startServer();
