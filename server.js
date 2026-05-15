@@ -4,6 +4,7 @@ const socketIO = require('socket.io');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const { Pool } = require('pg');
 
 const app = express();
 const server = http.createServer(app);
@@ -17,6 +18,12 @@ const io = socketIO(server, {
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+// PostgreSQL connection
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/chordia',
+    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+});
+
 // Servir les fichiers statiques
 const staticPath = path.join(__dirname, 'static');
 console.log('Serving static files from:', staticPath);
@@ -27,7 +34,7 @@ app.get('/logo.png', (req, res) => {
     res.sendFile(path.join(__dirname, 'logo.png'));
 });
 
-// Stockage en mémoire pour la version locale
+// Stockage en mémoire pour la version locale (cache)
 const users = {};
 const servers = {};
 const rooms = {};
@@ -38,83 +45,213 @@ const privateMessages = {};
 const serverRoles = {};
 const serverPermissions = {};
 const serverInvites = {};
-const loginLogFile = path.join(__dirname, 'logs-login.txt');
-const serversFile = path.join(__dirname, 'servers.json');
-const roomsFile = path.join(__dirname, 'rooms.json');
-const messagesFile = path.join(__dirname, 'messages.json');
-const friendsFile = path.join(__dirname, 'friends.json');
-const friendRequestsFile = path.join(__dirname, 'friend_requests.json');
-const privateMessagesFile = path.join(__dirname, 'private_messages.json');
-const serverRolesFile = path.join(__dirname, 'server_roles.json');
-const serverPermissionsFile = path.join(__dirname, 'server_permissions.json');
-const serverInvitesFile = path.join(__dirname, 'server_invites.json');
 
-// Charger les utilisateurs existants depuis le fichier
-function loadUsersFromFile() {
+// Charger les utilisateurs depuis PostgreSQL
+async function loadUsersFromDB() {
     try {
-        if (fs.existsSync(loginLogFile)) {
-            const data = fs.readFileSync(loginLogFile, 'utf8');
-            const lines = data.split('\n').filter(line => line.trim());
-            lines.forEach(line => {
-                const [username, displayname, password, timestamp, bio, avatarImage, bannerImage] = line.split('|');
-                if (username && displayname && password) {
-                    users[username] = {
-                        username: username,
-                        displayname: displayname,
-                        password: password,
-                        status: 'offline',
-                        joinedAt: timestamp || new Date().toISOString(),
-                        bio: bio || '',
-                        avatarImage: avatarImage || null,
-                        bannerImage: bannerImage || null
-                    };
-                }
-            });
-            console.log(`Chargé ${Object.keys(users).length} utilisateurs depuis logs-login`);
-        }
+        const result = await pool.query('SELECT * FROM users');
+        result.rows.forEach(row => {
+            users[row.username] = {
+                username: row.username,
+                displayname: row.displayname,
+                password: row.password,
+                status: row.status,
+                joinedAt: row.joined_at,
+                bio: row.bio,
+                avatarImage: row.avatar_image,
+                bannerImage: row.banner_image
+            };
+        });
+        console.log(`Chargé ${Object.keys(users).length} utilisateurs depuis PostgreSQL`);
     } catch (error) {
         console.error('Erreur lors du chargement des utilisateurs:', error);
     }
 }
 
-// Sauvegarder un utilisateur dans le fichier
-function saveUserToFile(username, displayname, password, bio = '', avatarImage = null, bannerImage = null) {
-    try {
-        const timestamp = new Date().toISOString();
-        const line = `${username}|${displayname}|${password}|${timestamp}|${bio}|${avatarImage || ''}|${bannerImage || ''}\n`;
-        fs.appendFileSync(loginLogFile, line);
-        console.log(`Utilisateur ${username} (${displayname}) enregistré dans logs-login`);
-    } catch (error) {
-        console.error('Erreur lors de la sauvegarde de l\'utilisateur:', error);
-    }
-}
-
-// Sauvegarder tous les utilisateurs dans le fichier
-function saveUsersToFile() {
-    try {
-        const lines = Object.values(users).map(user => {
-            return `${user.username}|${user.displayname}|${user.password}|${user.joinedAt || new Date().toISOString()}|${user.bio || ''}|${user.avatarImage || ''}|${user.bannerImage || ''}`;
-        });
-        fs.writeFileSync(loginLogFile, lines.join('\n') + '\n');
-        console.log(`Sauvegardé ${Object.keys(users).length} utilisateurs dans logs-login`);
-    } catch (error) {
-        console.error('Erreur lors de la sauvegarde des utilisateurs:', error);
-    }
-}
-
-// Charger les utilisateurs au démarrage
-loadUsersFromFile();
-
 // Charger les données au démarrage
-loadServersFromFile();
-loadRoomsFromFile();
-loadMessagesFromFile();
-loadFriendsFromFile();
-loadFriendRequestsFromFile();
-loadPrivateMessagesFromFile();
-loadServerRolesFromFile();
-loadServerPermissionsFromFile();
-loadServerInvitesFromFile();
+async function loadAllData() {
+    await loadUsersFromDB();
+    await loadServersFromDB();
+    await loadRoomsFromDB();
+    await loadMessagesFromDB();
+    await loadFriendsFromDB();
+    await loadFriendRequestsFromDB();
+    await loadPrivateMessagesFromDB();
+    await loadServerRolesFromDB();
+    await loadServerPermissionsFromDB();
+    await loadServerInvitesFromDB();
+}
+
+// Charger les serveurs depuis PostgreSQL
+async function loadServersFromDB() {
+    try {
+        const result = await pool.query('SELECT * FROM servers');
+        result.rows.forEach(row => {
+            servers[row.id] = {
+                id: row.id,
+                name: row.name,
+                creator: row.creator,
+                logo: row.logo,
+                createdAt: row.created_at,
+                members: [],
+                rooms: []
+            };
+        });
+        console.log(`Chargé ${Object.keys(servers).length} serveurs depuis PostgreSQL`);
+    } catch (error) {
+        console.error('Erreur lors du chargement des serveurs:', error);
+    }
+}
+
+// Charger les salons depuis PostgreSQL
+async function loadRoomsFromDB() {
+    try {
+        const result = await pool.query('SELECT * FROM rooms');
+        result.rows.forEach(row => {
+            rooms[row.id] = {
+                id: row.id,
+                serverId: row.server_id,
+                name: row.name,
+                creator: row.creator,
+                type: row.type,
+                createdAt: row.created_at,
+                members: []
+            };
+            if (servers[row.server_id]) {
+                servers[row.server_id].rooms.push(row.id);
+            }
+        });
+        console.log(`Chargé ${Object.keys(rooms).length} salons depuis PostgreSQL`);
+    } catch (error) {
+        console.error('Erreur lors du chargement des salons:', error);
+    }
+}
+
+// Charger les messages depuis PostgreSQL
+async function loadMessagesFromDB() {
+    try {
+        const result = await pool.query('SELECT * FROM messages');
+        result.rows.forEach(row => {
+            if (!messages[row.room_id]) {
+                messages[row.room_id] = [];
+            }
+            messages[row.room_id].push({
+                id: row.id,
+                username: row.username,
+                message: row.message,
+                timestamp: row.timestamp
+            });
+        });
+        console.log(`Chargé ${Object.keys(messages).length} historiques de messages depuis PostgreSQL`);
+    } catch (error) {
+        console.error('Erreur lors du chargement des messages:', error);
+    }
+}
+
+// Charger les amis depuis PostgreSQL
+async function loadFriendsFromDB() {
+    try {
+        const result = await pool.query('SELECT * FROM friends');
+        result.rows.forEach(row => {
+            if (!friends[row.username]) {
+                friends[row.username] = [];
+            }
+            friends[row.username].push(row.friend_username);
+        });
+        console.log(`Chargé ${Object.keys(friends).length} listes d'amis depuis PostgreSQL`);
+    } catch (error) {
+        console.error('Erreur lors du chargement des amis:', error);
+    }
+}
+
+// Charger les demandes d'amis depuis PostgreSQL
+async function loadFriendRequestsFromDB() {
+    try {
+        const result = await pool.query('SELECT * FROM friend_requests');
+        result.rows.forEach(row => {
+            if (!friendRequests[row.to_username]) {
+                friendRequests[row.to_username] = [];
+            }
+            friendRequests[row.to_username].push(row.from_username);
+        });
+        console.log(`Chargé ${Object.keys(friendRequests).length} demandes d'amis depuis PostgreSQL`);
+    } catch (error) {
+        console.error(`Erreur lors du chargement des demandes d'amis: ${error}`);
+    }
+}
+
+// Charger les messages privés depuis PostgreSQL
+async function loadPrivateMessagesFromDB() {
+    try {
+        const result = await pool.query('SELECT * FROM private_messages');
+        result.rows.forEach(row => {
+            const conversationKey = [row.from_username, row.to_username].sort().join('_');
+            if (!privateMessages[conversationKey]) {
+                privateMessages[conversationKey] = [];
+            }
+            privateMessages[conversationKey].push({
+                id: row.id,
+                from: row.from_username,
+                to: row.to_username,
+                message: row.message,
+                timestamp: row.timestamp
+            });
+        });
+        console.log(`Chargé ${Object.keys(privateMessages).length} conversations privées depuis PostgreSQL`);
+    } catch (error) {
+        console.error('Erreur lors du chargement des messages privés:', error);
+    }
+}
+
+// Charger les rôles de serveur depuis PostgreSQL
+async function loadServerRolesFromDB() {
+    try {
+        const result = await pool.query('SELECT * FROM server_roles');
+        result.rows.forEach(row => {
+            if (!serverRoles[row.server_id]) {
+                serverRoles[row.server_id] = [];
+            }
+            serverRoles[row.server_id].push({
+                id: row.id,
+                name: row.name,
+                color: row.color,
+                permissions: row.permissions
+            });
+        });
+        console.log(`Chargé ${Object.keys(serverRoles).length} configurations de rôles depuis PostgreSQL`);
+    } catch (error) {
+        console.error('Erreur lors du chargement des rôles de serveur:', error);
+    }
+}
+
+// Charger les permissions de serveur depuis PostgreSQL
+async function loadServerPermissionsFromDB() {
+    try {
+        const result = await pool.query('SELECT * FROM server_permissions');
+        result.rows.forEach(row => {
+            serverPermissions[row.server_id] = row.permissions;
+        });
+        console.log(`Chargé ${Object.keys(serverPermissions).length} configurations de permissions depuis PostgreSQL`);
+    } catch (error) {
+        console.error('Erreur lors du chargement des permissions de serveur:', error);
+    }
+}
+
+// Charger les invitations de serveur depuis PostgreSQL
+async function loadServerInvitesFromDB() {
+    try {
+        const result = await pool.query('SELECT * FROM server_invites');
+        result.rows.forEach(row => {
+            if (!serverInvites[row.server_id]) {
+                serverInvites[row.server_id] = [];
+            }
+            serverInvites[row.server_id].push(row.username);
+        });
+        console.log('Invitations de serveur chargées depuis PostgreSQL');
+    } catch (error) {
+        console.error('Erreur lors du chargement des invitations de serveur:', error);
+    }
+}
 
 // Servir la page principale
 app.get('/', (req, res) => {
@@ -152,37 +289,49 @@ app.post('/login', (req, res) => {
 });
 
 // Register
-app.post('/register', (req, res) => {
+app.post('/register', async (req, res) => {
     const { username, displayname, password } = req.body;
-    
+
     console.log('Requête d\'inscription reçue:', { username, displayname });
-    
+
     if (!username || !displayname || !password) {
         console.log('Nom d\'utilisateur, pseudo ou mot de passe manquant');
         return res.status(400).json({ success: false, message: "Nom d'utilisateur, pseudo et mot de passe requis" });
     }
-    
-    // Vérifier si le nom d'utilisateur existe déjà
-    if (users[username]) {
-        console.log('Nom d\'utilisateur déjà pris:', username);
-        return res.status(400).json({ success: false, message: "Ce nom d'utilisateur est déjà pris" });
+
+    try {
+        // Vérifier si le nom d'utilisateur existe déjà
+        const existingUser = await pool.query('SELECT username FROM users WHERE username = $1', [username]);
+        if (existingUser.rows.length > 0) {
+            console.log('Nom d\'utilisateur déjà pris:', username);
+            return res.status(400).json({ success: false, message: "Ce nom d'utilisateur est déjà pris" });
+        }
+
+        // Créer le nouvel utilisateur
+        const result = await pool.query(
+            'INSERT INTO users (username, displayname, password, status) VALUES ($1, $2, $3, $4) RETURNING *',
+            [username, displayname, password, 'online']
+        );
+
+        const newUser = {
+            username: result.rows[0].username,
+            displayname: result.rows[0].displayname,
+            password: result.rows[0].password,
+            status: result.rows[0].status,
+            joinedAt: result.rows[0].joined_at,
+            bio: result.rows[0].bio,
+            avatarImage: result.rows[0].avatar_image,
+            bannerImage: result.rows[0].banner_image
+        };
+
+        users[username] = newUser;
+        console.log('Utilisateur créé:', newUser);
+
+        res.json({ success: true, user: newUser });
+    } catch (error) {
+        console.error('Erreur lors de l\'inscription:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de l'inscription" });
     }
-    
-    // Créer le nouvel utilisateur
-    users[username] = {
-        username: username,
-        displayname: displayname,
-        password: password,
-        status: 'online',
-        joinedAt: new Date().toISOString()
-    };
-    
-    console.log('Utilisateur créé:', users[username]);
-    
-    // Sauvegarder dans le fichier
-    saveUserToFile(username, displayname, password);
-    
-    res.json({ success: true, user: users[username] });
 });
 
 // Obtenir la liste des utilisateurs
@@ -214,110 +363,171 @@ app.get('/rooms', (req, res) => {
 });
 
 // Créer un serveur
-app.post('/create_server', (req, res) => {
+app.post('/create_server', async (req, res) => {
     const { name, creator } = req.body;
-    
+
     if (!name || !creator) {
         return res.status(400).json({ success: false, message: "Nom et créateur requis" });
     }
-    
-    const serverId = String(Object.keys(servers).length + 1);
-    servers[serverId] = {
-        id: serverId,
-        name: name,
-        creator: creator,
-        members: [creator],
-        rooms: [],
-        createdAt: new Date().toISOString()
-    };
-    
-    // Créer un salon général par défaut
-    const roomId = String(Object.keys(rooms).length + 1);
-    rooms[roomId] = {
-        id: roomId,
-        serverId: serverId,
-        name: 'général',
-        creator: creator,
-        members: [creator],
-        type: 'text',
-        createdAt: new Date().toISOString()
-    };
-    messages[roomId] = [];
-    servers[serverId].rooms.push(roomId);
-    
-    saveServersToFile();
-    saveRoomsToFile();
-    
-    res.json({ success: true, server: servers[serverId] });
+
+    try {
+        const serverId = String(Date.now());
+
+        // Créer le serveur
+        await pool.query(
+            'INSERT INTO servers (id, name, creator) VALUES ($1, $2, $3)',
+            [serverId, name, creator]
+        );
+
+        // Ajouter le créateur comme membre
+        await pool.query(
+            'INSERT INTO server_members (server_id, username) VALUES ($1, $2)',
+            [serverId, creator]
+        );
+
+        servers[serverId] = {
+            id: serverId,
+            name: name,
+            creator: creator,
+            members: [creator],
+            rooms: [],
+            createdAt: new Date().toISOString()
+        };
+
+        // Créer un salon général par défaut
+        const roomId = String(Date.now() + 1);
+        await pool.query(
+            'INSERT INTO rooms (id, server_id, name, creator, type) VALUES ($1, $2, $3, $4, $5)',
+            [roomId, serverId, 'général', creator, 'text']
+        );
+
+        // Ajouter le créateur comme membre du salon
+        await pool.query(
+            'INSERT INTO room_members (room_id, username) VALUES ($1, $2)',
+            [roomId, creator]
+        );
+
+        rooms[roomId] = {
+            id: roomId,
+            serverId: serverId,
+            name: 'général',
+            creator: creator,
+            members: [creator],
+            type: 'text',
+            createdAt: new Date().toISOString()
+        };
+        messages[roomId] = [];
+        servers[serverId].rooms.push(roomId);
+
+        res.json({ success: true, server: servers[serverId] });
+    } catch (error) {
+        console.error('Erreur lors de la création du serveur:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de la création du serveur" });
+    }
 });
 
 // Obtenir la liste des serveurs
 app.get('/servers', (req, res) => {
-    // Recharger depuis le fichier pour s'assurer d'avoir les données les plus récentes
-    loadServersFromFile();
     res.json(Object.values(servers));
 });
 
 // Créer un salon dans un serveur
-app.post('/create_room', (req, res) => {
+app.post('/create_room', async (req, res) => {
     const { name, creator, serverId, type } = req.body;
-    
+
     if (!name || !creator || !serverId) {
         return res.status(400).json({ success: false, message: "Nom, créateur et serveur requis" });
     }
-    
+
     if (!servers[serverId]) {
         return res.status(400).json({ success: false, message: "Serveur non trouvé" });
     }
-    
-    const roomId = String(Object.keys(rooms).length + 1);
-    rooms[roomId] = {
-        id: roomId,
-        serverId: serverId,
-        name: name,
-        creator: creator,
-        members: [creator],
-        type: type || 'text',
-        createdAt: new Date().toISOString()
-    };
-    messages[roomId] = [];
-    servers[serverId].rooms.push(roomId);
-    
-    saveRoomsToFile();
-    saveServersToFile();
-    
-    res.json({ success: true, room: rooms[roomId] });
+
+    try {
+        const roomId = String(Date.now());
+
+        await pool.query(
+            'INSERT INTO rooms (id, server_id, name, creator, type) VALUES ($1, $2, $3, $4, $5)',
+            [roomId, serverId, name, creator, type || 'text']
+        );
+
+        await pool.query(
+            'INSERT INTO room_members (room_id, username) VALUES ($1, $2)',
+            [roomId, creator]
+        );
+
+        rooms[roomId] = {
+            id: roomId,
+            serverId: serverId,
+            name: name,
+            creator: creator,
+            members: [creator],
+            type: type || 'text',
+            createdAt: new Date().toISOString()
+        };
+        messages[roomId] = [];
+        servers[serverId].rooms.push(roomId);
+
+        res.json({ success: true, room: rooms[roomId] });
+    } catch (error) {
+        console.error('Erreur lors de la création du salon:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de la création du salon" });
+    }
 });
 
 // Mettre à jour le profil utilisateur
-app.post('/update_profile', (req, res) => {
+app.post('/update_profile', async (req, res) => {
     const { username, displayname, bio, avatarImage, bannerImage } = req.body;
 
     if (!users[username]) {
         return res.status(404).json({ success: false, message: "Utilisateur non trouvé" });
     }
 
-    if (displayname) {
-        users[username].displayname = displayname;
-    }
-    if (bio !== undefined) {
-        users[username].bio = bio;
-    }
-    if (avatarImage !== undefined) {
-        users[username].avatarImage = avatarImage;
-    }
-    if (bannerImage !== undefined) {
-        users[username].bannerImage = bannerImage;
-    }
+    try {
+        const updates = [];
+        const values = [];
+        let paramCount = 1;
 
-    // Mettre à jour le fichier logs-login.txt
-    saveUsersToFile();
+        if (displayname) {
+            updates.push(`displayname = $${paramCount}`);
+            values.push(displayname);
+            paramCount++;
+            users[username].displayname = displayname;
+        }
+        if (bio !== undefined) {
+            updates.push(`bio = $${paramCount}`);
+            values.push(bio);
+            paramCount++;
+            users[username].bio = bio;
+        }
+        if (avatarImage !== undefined) {
+            updates.push(`avatar_image = $${paramCount}`);
+            values.push(avatarImage);
+            paramCount++;
+            users[username].avatarImage = avatarImage;
+        }
+        if (bannerImage !== undefined) {
+            updates.push(`banner_image = $${paramCount}`);
+            values.push(bannerImage);
+            paramCount++;
+            users[username].bannerImage = bannerImage;
+        }
 
-    res.json({ success: true, user: users[username] });
+        if (updates.length > 0) {
+            values.push(username);
+            const query = `UPDATE users SET ${updates.join(', ')} WHERE username = $${paramCount}`;
+            await pool.query(query, values);
+        }
+
+        res.json({ success: true, user: users[username] });
+    } catch (error) {
+        console.error('Erreur lors de la mise à jour du profil:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de la mise à jour du profil" });
+    }
 });
 
 // Upload de bannière de profil (base64 pour Render)
-app.post('/upload_banner', (req, res) => {
+app.post('/upload_banner', async (req, res) => {
     const { username, bannerImage } = req.body;
 
     if (!username || !users[username]) {
@@ -333,274 +543,42 @@ app.post('/upload_banner', (req, res) => {
         return res.status(400).json({ success: false, message: "Format d'image invalide" });
     }
 
-    users[username].bannerImage = bannerImage;
-    saveUsersToFile();
-
-    res.json({ success: true, bannerUrl: bannerImage });
+    try {
+        await pool.query('UPDATE users SET banner_image = $1 WHERE username = $2', [bannerImage, username]);
+        users[username].bannerImage = bannerImage;
+        res.json({ success: true, bannerUrl: bannerImage });
+    } catch (error) {
+        console.error('Erreur lors de l\'upload de la bannière:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de l'upload de la bannière" });
+    }
 });
 
 // Changer le mot de passe utilisateur
-app.post('/change_password', (req, res) => {
+app.post('/change_password', async (req, res) => {
     const { username, currentPassword, newPassword } = req.body;
-    
+
     if (!users[username]) {
         return res.status(404).json({ success: false, message: "Utilisateur non trouvé" });
     }
-    
+
     if (users[username].password !== currentPassword) {
         return res.status(400).json({ success: false, message: "Mot de passe actuel incorrect" });
     }
-    
+
     if (!newPassword || newPassword.length < 4) {
         return res.status(400).json({ success: false, message: "Le nouveau mot de passe doit contenir au moins 4 caractères" });
     }
-    
-    users[username].password = newPassword;
-    
-    // Mettre à jour le fichier logs-login.txt
-    saveUsersToFile();
-    
-    res.json({ success: true, message: "Mot de passe changé avec succès" });
+
+    try {
+        await pool.query('UPDATE users SET password = $1 WHERE username = $2', [newPassword, username]);
+        users[username].password = newPassword;
+        res.json({ success: true, message: "Mot de passe changé avec succès" });
+    } catch (error) {
+        console.error('Erreur lors du changement de mot de passe:', error);
+        res.status(500).json({ success: false, message: "Erreur lors du changement de mot de passe" });
+    }
 });
 
-// Mettre à jour un utilisateur dans le fichier
-function updateUserInFile(username) {
-    try {
-        if (!fs.existsSync(loginLogFile)) {
-            return;
-        }
-        
-        const data = fs.readFileSync(loginLogFile, 'utf8');
-        const lines = data.split('\n').filter(line => line.trim());
-        const updatedLines = lines.map(line => {
-            const parts = line.split('|');
-            if (parts[0] === username) {
-                const [u, d, p, t, b, a, banner] = parts;
-                return `${u}|${d}|${p}|${t}|${users[username].bio || ''}|${users[username].avatarImage || ''}|${users[username].bannerImage || ''}`;
-            }
-            return line;
-        });
-        
-        fs.writeFileSync(loginLogFile, updatedLines.join('\n') + '\n');
-        console.log(`Utilisateur ${username} mis à jour dans logs-login`);
-    } catch (error) {
-        console.error('Erreur lors de la mise à jour de l\'utilisateur:', error);
-    }
-}
-
-// Charger les serveurs depuis le fichier
-function loadServersFromFile() {
-    try {
-        if (fs.existsSync(serversFile)) {
-            const data = fs.readFileSync(serversFile, 'utf8');
-            const loadedServers = JSON.parse(data);
-            Object.assign(servers, loadedServers);
-            console.log(`Chargé ${Object.keys(servers).length} serveurs depuis servers.json`);
-        }
-    } catch (error) {
-        console.error('Erreur lors du chargement des serveurs:', error);
-    }
-}
-
-// Sauvegarder les serveurs dans le fichier
-function saveServersToFile() {
-    try {
-        fs.writeFileSync(serversFile, JSON.stringify(servers, null, 2));
-        console.log('Serveurs sauvegardés dans servers.json');
-    } catch (error) {
-        console.error('Erreur lors de la sauvegarde des serveurs:', error);
-    }
-}
-
-// Charger les salons depuis le fichier
-function loadRoomsFromFile() {
-    try {
-        if (fs.existsSync(roomsFile)) {
-            const data = fs.readFileSync(roomsFile, 'utf8');
-            const loadedRooms = JSON.parse(data);
-            Object.assign(rooms, loadedRooms);
-            console.log(`Chargé ${Object.keys(rooms).length} salons depuis rooms.json`);
-        }
-    } catch (error) {
-        console.error('Erreur lors du chargement des salons:', error);
-    }
-}
-
-// Sauvegarder les salons dans le fichier
-function saveRoomsToFile() {
-    try {
-        fs.writeFileSync(roomsFile, JSON.stringify(rooms, null, 2));
-        console.log('Salons sauvegardés dans rooms.json');
-    } catch (error) {
-        console.error('Erreur lors de la sauvegarde des salons:', error);
-    }
-}
-
-// Charger les messages depuis le fichier
-function loadMessagesFromFile() {
-    try {
-        if (fs.existsSync(messagesFile)) {
-            const data = fs.readFileSync(messagesFile, 'utf8');
-            const loadedMessages = JSON.parse(data);
-            Object.assign(messages, loadedMessages);
-            console.log(`Chargé ${Object.keys(messages).length} historiques de messages depuis messages.json`);
-        }
-    } catch (error) {
-        console.error('Erreur lors du chargement des messages:', error);
-    }
-}
-
-// Sauvegarder les messages dans le fichier
-function saveMessagesToFile() {
-    try {
-        fs.writeFileSync(messagesFile, JSON.stringify(messages, null, 2));
-        console.log('Messages sauvegardés dans messages.json');
-    } catch (error) {
-        console.error('Erreur lors de la sauvegarde des messages:', error);
-    }
-}
-
-// Charger les amis depuis le fichier
-function loadFriendsFromFile() {
-    try {
-        if (fs.existsSync(friendsFile)) {
-            const data = fs.readFileSync(friendsFile, 'utf8');
-            const loadedFriends = JSON.parse(data);
-            Object.assign(friends, loadedFriends);
-            console.log(`Chargé ${Object.keys(friends).length} listes d'amis depuis friends.json`);
-        }
-    } catch (error) {
-        console.error('Erreur lors du chargement des amis:', error);
-    }
-}
-
-// Sauvegarder les amis dans le fichier
-function saveFriendsToFile() {
-    try {
-        fs.writeFileSync(friendsFile, JSON.stringify(friends, null, 2));
-        console.log('Amis sauvegardés dans friends.json');
-    } catch (error) {
-        console.error('Erreur lors de la sauvegarde des amis:', error);
-    }
-}
-
-// Charger les demandes d'amis depuis le fichier
-function loadFriendRequestsFromFile() {
-    try {
-        if (fs.existsSync(friendRequestsFile)) {
-            const data = fs.readFileSync(friendRequestsFile, 'utf8');
-            const loadedRequests = JSON.parse(data);
-            Object.assign(friendRequests, loadedRequests);
-            console.log(`Chargé ${Object.keys(friendRequests).length} demandes d'amis depuis friend_requests.json`);
-        }
-    } catch (error) {
-        console.error('Erreur lors du chargement des demandes d\'amis:', error);
-    }
-}
-
-// Sauvegarder les demandes d'amis dans le fichier
-function saveFriendRequestsToFile() {
-    try {
-        fs.writeFileSync(friendRequestsFile, JSON.stringify(friendRequests, null, 2));
-        console.log('Demandes d\'amis sauvegardées dans friend_requests.json');
-    } catch (error) {
-        console.error('Erreur lors de la sauvegarde des demandes d\'amis:', error);
-    }
-}
-
-// Charger les messages privés depuis le fichier
-function loadPrivateMessagesFromFile() {
-    try {
-        if (fs.existsSync(privateMessagesFile)) {
-            const data = fs.readFileSync(privateMessagesFile, 'utf8');
-            const loadedPrivateMessages = JSON.parse(data);
-            Object.assign(privateMessages, loadedPrivateMessages);
-            console.log(`Chargé ${Object.keys(privateMessages).length} conversations privées depuis private_messages.json`);
-        }
-    } catch (error) {
-        console.error('Erreur lors du chargement des messages privés:', error);
-    }
-}
-
-// Sauvegarder les messages privés dans le fichier
-function savePrivateMessagesToFile() {
-    try {
-        fs.writeFileSync(privateMessagesFile, JSON.stringify(privateMessages, null, 2));
-        console.log('Messages privés sauvegardés dans private_messages.json');
-    } catch (error) {
-        console.error('Erreur lors de la sauvegarde des messages privés:', error);
-    }
-}
-
-// Charger les rôles de serveur depuis le fichier
-function loadServerRolesFromFile() {
-    try {
-        if (fs.existsSync(serverRolesFile)) {
-            const data = fs.readFileSync(serverRolesFile, 'utf8');
-            const loadedRoles = JSON.parse(data);
-            Object.assign(serverRoles, loadedRoles);
-            console.log(`Chargé ${Object.keys(serverRoles).length} configurations de rôles depuis server_roles.json`);
-        }
-    } catch (error) {
-        console.error('Erreur lors du chargement des rôles de serveur:', error);
-    }
-}
-
-// Sauvegarder les rôles de serveur dans le fichier
-function saveServerRolesToFile() {
-    try {
-        fs.writeFileSync(serverRolesFile, JSON.stringify(serverRoles, null, 2));
-        console.log('Rôles de serveur sauvegardés dans server_roles.json');
-    } catch (error) {
-        console.error('Erreur lors de la sauvegarde des rôles de serveur:', error);
-    }
-}
-
-// Charger les permissions de serveur depuis le fichier
-function loadServerPermissionsFromFile() {
-    try {
-        if (fs.existsSync(serverPermissionsFile)) {
-            const data = fs.readFileSync(serverPermissionsFile, 'utf8');
-            const loadedPermissions = JSON.parse(data);
-            Object.assign(serverPermissions, loadedPermissions);
-            console.log(`Chargé ${Object.keys(serverPermissions).length} configurations de permissions depuis server_permissions.json`);
-        }
-    } catch (error) {
-        console.error('Erreur lors du chargement des permissions de serveur:', error);
-    }
-}
-
-// Sauvegarder les permissions de serveur dans le fichier
-function saveServerPermissionsToFile() {
-    try {
-        fs.writeFileSync(serverPermissionsFile, JSON.stringify(serverPermissions, null, 2));
-        console.log('Permissions de serveur sauvegardées dans server_permissions.json');
-    } catch (error) {
-        console.error('Erreur lors de la sauvegarde des permissions de serveur:', error);
-    }
-}
-
-function loadServerInvitesFromFile() {
-    try {
-        if (fs.existsSync(serverInvitesFile)) {
-            const data = fs.readFileSync(serverInvitesFile, 'utf8');
-            const loadedInvites = JSON.parse(data);
-            Object.assign(serverInvites, loadedInvites);
-            console.log('Invitations de serveur chargées depuis server_invites.json');
-        }
-    } catch (error) {
-        console.error('Erreur lors du chargement des invitations de serveur:', error);
-    }
-}
-
-function saveServerInvitesToFile() {
-    try {
-        fs.writeFileSync(serverInvitesFile, JSON.stringify(serverInvites, null, 2));
-        console.log('Invitations de serveur sauvegardées dans server_invites.json');
-    } catch (error) {
-        console.error('Erreur lors de la sauvegarde des invitations de serveur:', error);
-    }
-}
 
 // Obtenir les messages d'un salon
 app.get('/rooms/:roomId/messages', (req, res) => {
@@ -635,41 +613,58 @@ app.get('/friends/:username', (req, res) => {
 });
 
 // Envoyer une demande d'ami
-app.post('/friend_request', (req, res) => {
+app.post('/friend_request', async (req, res) => {
     const { from, to } = req.body;
-    
+
     if (!from || !to) {
         return res.status(400).json({ success: false, message: "Expéditeur et destinataire requis" });
     }
-    
+
     if (!users[from] || !users[to]) {
         return res.status(404).json({ success: false, message: "Utilisateur non trouvé" });
     }
-    
+
     if (from === to) {
         return res.status(400).json({ success: false, message: "Impossible de s'ajouter soi-même" });
     }
-    
-    // Vérifier s'ils sont déjà amis
-    if (friends[from] && friends[from].includes(to)) {
-        return res.status(400).json({ success: false, message: "Déjà amis" });
+
+    try {
+        // Vérifier s'ils sont déjà amis
+        const existingFriend = await pool.query(
+            'SELECT * FROM friends WHERE username = $1 AND friend_username = $2',
+            [from, to]
+        );
+        if (existingFriend.rows.length > 0) {
+            return res.status(400).json({ success: false, message: "Déjà amis" });
+        }
+
+        // Vérifier si une demande existe déjà
+        const existingRequest = await pool.query(
+            'SELECT * FROM friend_requests WHERE from_username = $1 AND to_username = $2',
+            [from, to]
+        );
+        if (existingRequest.rows.length > 0) {
+            return res.status(400).json({ success: false, message: "Demande déjà envoyée" });
+        }
+
+        await pool.query(
+            'INSERT INTO friend_requests (from_username, to_username) VALUES ($1, $2)',
+            [from, to]
+        );
+
+        if (!friendRequests[to]) {
+            friendRequests[to] = [];
+        }
+        friendRequests[to].push(from);
+
+        // Notifier le destinataire
+        io.emit('friend_request_received', { from, to });
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Erreur lors de l\'envoi de la demande d\'ami:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de l'envoi de la demande d'ami" });
     }
-    
-    // Vérifier si une demande existe déjà
-    if (!friendRequests[to]) {
-        friendRequests[to] = [];
-    }
-    if (friendRequests[to].includes(from)) {
-        return res.status(400).json({ success: false, message: "Demande déjà envoyée" });
-    }
-    
-    friendRequests[to].push(from);
-    saveFriendRequestsToFile();
-    
-    // Notifier le destinataire
-    io.emit('friend_request_received', { from, to });
-    
-    res.json({ success: true });
 });
 
 // Obtenir les demandes d'amis d'un utilisateur
@@ -694,81 +689,116 @@ app.get('/friend_requests/:username', (req, res) => {
 });
 
 // Accepter une demande d'ami
-app.post('/accept_friend', (req, res) => {
+app.post('/accept_friend', async (req, res) => {
     const { username, friendUsername } = req.body;
-    
+
     if (!username || !friendUsername) {
         return res.status(400).json({ success: false, message: "Utilisateurs requis" });
     }
-    
-    // Retirer la demande
-    if (friendRequests[username]) {
-        friendRequests[username] = friendRequests[username].filter(u => u !== friendUsername);
+
+    try {
+        // Retirer la demande
+        await pool.query(
+            'DELETE FROM friend_requests WHERE to_username = $1 AND from_username = $2',
+            [username, friendUsername]
+        );
+
+        if (friendRequests[username]) {
+            friendRequests[username] = friendRequests[username].filter(u => u !== friendUsername);
+        }
+
+        // Ajouter aux amis des deux côtés
+        await pool.query(
+            'INSERT INTO friends (username, friend_username) VALUES ($1, $2)',
+            [username, friendUsername]
+        );
+        await pool.query(
+            'INSERT INTO friends (username, friend_username) VALUES ($1, $2)',
+            [friendUsername, username]
+        );
+
+        if (!friends[username]) {
+            friends[username] = [];
+        }
+        if (!friends[friendUsername]) {
+            friends[friendUsername] = [];
+        }
+
+        if (!friends[username].includes(friendUsername)) {
+            friends[username].push(friendUsername);
+        }
+        if (!friends[friendUsername].includes(username)) {
+            friends[friendUsername].push(username);
+        }
+
+        // Notifier les deux utilisateurs
+        io.emit('friend_accepted', { username, friendUsername });
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Erreur lors de l\'acceptation de la demande d\'ami:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de l'acceptation de la demande d'ami" });
     }
-    saveFriendRequestsToFile();
-    
-    // Ajouter aux amis des deux côtés
-    if (!friends[username]) {
-        friends[username] = [];
-    }
-    if (!friends[friendUsername]) {
-        friends[friendUsername] = [];
-    }
-    
-    if (!friends[username].includes(friendUsername)) {
-        friends[username].push(friendUsername);
-    }
-    if (!friends[friendUsername].includes(username)) {
-        friends[friendUsername].push(username);
-    }
-    
-    saveFriendsToFile();
-    
-    // Notifier les deux utilisateurs
-    io.emit('friend_accepted', { username, friendUsername });
-    
-    res.json({ success: true });
 });
 
 // Refuser une demande d'ami
-app.post('/reject_friend', (req, res) => {
+app.post('/reject_friend', async (req, res) => {
     const { username, friendUsername } = req.body;
-    
+
     if (!username || !friendUsername) {
         return res.status(400).json({ success: false, message: "Utilisateurs requis" });
     }
-    
-    // Retirer la demande
-    if (friendRequests[username]) {
-        friendRequests[username] = friendRequests[username].filter(u => u !== friendUsername);
+
+    try {
+        await pool.query(
+            'DELETE FROM friend_requests WHERE to_username = $1 AND from_username = $2',
+            [username, friendUsername]
+        );
+
+        if (friendRequests[username]) {
+            friendRequests[username] = friendRequests[username].filter(u => u !== friendUsername);
+        }
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Erreur lors du rejet de la demande d\'ami:', error);
+        res.status(500).json({ success: false, message: "Erreur lors du rejet de la demande d'ami" });
     }
-    saveFriendRequestsToFile();
-    
-    res.json({ success: true });
 });
 
 // Supprimer un ami
-app.post('/remove_friend', (req, res) => {
+app.post('/remove_friend', async (req, res) => {
     const { username, friendUsername } = req.body;
-    
+
     if (!username || !friendUsername) {
         return res.status(400).json({ success: false, message: "Utilisateurs requis" });
     }
-    
-    // Retirer des amis des deux côtés
-    if (friends[username]) {
-        friends[username] = friends[username].filter(u => u !== friendUsername);
+
+    try {
+        await pool.query(
+            'DELETE FROM friends WHERE username = $1 AND friend_username = $2',
+            [username, friendUsername]
+        );
+        await pool.query(
+            'DELETE FROM friends WHERE username = $1 AND friend_username = $2',
+            [friendUsername, username]
+        );
+
+        if (friends[username]) {
+            friends[username] = friends[username].filter(u => u !== friendUsername);
+        }
+        if (friends[friendUsername]) {
+            friends[friendUsername] = friends[friendUsername].filter(u => u !== username);
+        }
+
+        // Notifier les deux utilisateurs
+        io.emit('friend_removed', { username, friendUsername });
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Erreur lors de la suppression de l\'ami:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de la suppression de l'ami" });
     }
-    if (friends[friendUsername]) {
-        friends[friendUsername] = friends[friendUsername].filter(u => u !== username);
-    }
-    
-    saveFriendsToFile();
-    
-    // Notifier les deux utilisateurs
-    io.emit('friend_removed', { username, friendUsername });
-    
-    res.json({ success: true });
 });
 
 // Obtenir les messages privés entre deux utilisateurs
@@ -786,72 +816,89 @@ app.get('/private_messages/:user1/:user2', (req, res) => {
 });
 
 // Envoyer un message privé
-app.post('/private_message', (req, res) => {
+app.post('/private_message', async (req, res) => {
     const { from, to, message } = req.body;
-    
+
     if (!from || !to || !message) {
         return res.status(400).json({ success: false, message: "Expéditeur, destinataire et message requis" });
     }
-    
-    // Créer une clé unique pour la conversation
-    const conversationKey = [from, to].sort().join('_');
-    
-    if (!privateMessages[conversationKey]) {
-        privateMessages[conversationKey] = [];
+
+    try {
+        // Créer une clé unique pour la conversation
+        const conversationKey = [from, to].sort().join('_');
+
+        if (!privateMessages[conversationKey]) {
+            privateMessages[conversationKey] = [];
+        }
+
+        const result = await pool.query(
+            'INSERT INTO private_messages (from_username, to_username, message) VALUES ($1, $2, $3) RETURNING *',
+            [from, to, message]
+        );
+
+        const msgData = {
+            id: result.rows[0].id,
+            from: result.rows[0].from_username,
+            to: result.rows[0].to_username,
+            message: result.rows[0].message,
+            timestamp: result.rows[0].timestamp
+        };
+
+        privateMessages[conversationKey].push(msgData);
+
+        // Notifier les deux utilisateurs via socket
+        io.emit('private_message', msgData);
+
+        res.json({ success: true, message: msgData });
+    } catch (error) {
+        console.error('Erreur lors de l\'envoi du message privé:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de l'envoi du message privé" });
     }
-    
-    const msgData = {
-        id: privateMessages[conversationKey].length + 1,
-        from: from,
-        to: to,
-        message: message,
-        timestamp: new Date().toISOString()
-    };
-    
-    privateMessages[conversationKey].push(msgData);
-    savePrivateMessagesToFile();
-    
-    // Notifier les deux utilisateurs via socket
-    io.emit('private_message', msgData);
-    
-    res.json({ success: true, message: msgData });
 });
 
 // Mettre à jour le nom d'un serveur
-app.post('/update_server_name', (req, res) => {
+app.post('/update_server_name', async (req, res) => {
     const { serverId, name } = req.body;
-    
+
     if (!serverId || !name) {
         return res.status(400).json({ success: false, message: "ID du serveur et nom requis" });
     }
-    
+
     if (!servers[serverId]) {
         return res.status(404).json({ success: false, message: "Serveur non trouvé" });
     }
-    
-    servers[serverId].name = name;
-    saveServersToFile();
-    
-    console.log(`Nom du serveur ${serverId} mis à jour: ${name}`);
-    res.json({ success: true, server: servers[serverId] });
+
+    try {
+        await pool.query('UPDATE servers SET name = $1 WHERE id = $2', [name, serverId]);
+        servers[serverId].name = name;
+        console.log(`Nom du serveur ${serverId} mis à jour: ${name}`);
+        res.json({ success: true, server: servers[serverId] });
+    } catch (error) {
+        console.error('Erreur lors de la mise à jour du nom du serveur:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de la mise à jour du nom du serveur" });
+    }
 });
 
 // Mettre à jour le logo d'un serveur
-app.post('/update_server_logo', (req, res) => {
+app.post('/update_server_logo', async (req, res) => {
     const { serverId, logo } = req.body;
-    
+
     if (!serverId) {
         return res.status(400).json({ success: false, message: "ID du serveur requis" });
     }
-    
+
     if (!servers[serverId]) {
         return res.status(404).json({ success: false, message: "Serveur non trouvé" });
     }
-    
-    servers[serverId].logo = logo || null;
-    saveServersToFile();
-    
-    res.json({ success: true, server: servers[serverId] });
+
+    try {
+        await pool.query('UPDATE servers SET logo = $1 WHERE id = $2', [logo || null, serverId]);
+        servers[serverId].logo = logo || null;
+        res.json({ success: true, server: servers[serverId] });
+    } catch (error) {
+        console.error('Erreur lors de la mise à jour du logo du serveur:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de la mise à jour du logo du serveur" });
+    }
 });
 
 // Obtenir les rôles d'un serveur
@@ -866,67 +913,83 @@ app.get('/servers/:serverId/roles', (req, res) => {
 });
 
 // Créer un rôle pour un serveur
-app.post('/servers/:serverId/roles', (req, res) => {
+app.post('/servers/:serverId/roles', async (req, res) => {
     const { serverId } = req.params;
     const { name, color } = req.body;
-    
+
     if (!serverId || !name) {
         return res.status(400).json({ success: false, message: "ID du serveur et nom du rôle requis" });
     }
-    
+
     if (!servers[serverId]) {
         return res.status(404).json({ success: false, message: "Serveur non trouvé" });
     }
-    
-    if (!serverRoles[serverId]) {
-        serverRoles[serverId] = [];
+
+    try {
+        if (!serverRoles[serverId]) {
+            serverRoles[serverId] = [];
+        }
+
+        const newRole = {
+            id: String(Date.now()),
+            name: name,
+            color: color || '#5865f2',
+            permissions: []
+        };
+
+        await pool.query(
+            'INSERT INTO server_roles (id, server_id, name, color, permissions) VALUES ($1, $2, $3, $4, $5)',
+            [newRole.id, serverId, name, color || '#5865f2', []]
+        );
+
+        serverRoles[serverId].push(newRole);
+        res.json({ success: true, role: newRole });
+    } catch (error) {
+        console.error('Erreur lors de la création du rôle:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de la création du rôle" });
     }
-    
-    const newRole = {
-        id: String(Date.now()),
-        name: name,
-        color: color || '#5865f2',
-        permissions: []
-    };
-    
-    serverRoles[serverId].push(newRole);
-    saveServerRolesToFile();
-    
-    res.json({ success: true, role: newRole });
 });
 
 // Supprimer un rôle d'un serveur
-app.delete('/servers/:serverId/roles/:roleId', (req, res) => {
+app.delete('/servers/:serverId/roles/:roleId', async (req, res) => {
     const { serverId, roleId } = req.params;
-    
+
     if (!serverRoles[serverId]) {
         return res.status(404).json({ success: false, message: "Rôles non trouvés" });
     }
-    
-    serverRoles[serverId] = serverRoles[serverId].filter(role => role.id !== roleId);
-    saveServerRolesToFile();
-    
-    res.json({ success: true });
+
+    try {
+        await pool.query('DELETE FROM server_roles WHERE id = $1', [roleId]);
+        serverRoles[serverId] = serverRoles[serverId].filter(role => role.id !== roleId);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Erreur lors de la suppression du rôle:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de la suppression du rôle" });
+    }
 });
 
 // Mettre à jour les permissions d'un rôle
-app.post('/servers/:serverId/roles/:roleId/permissions', (req, res) => {
+app.post('/servers/:serverId/roles/:roleId/permissions', async (req, res) => {
     const { serverId, roleId } = req.params;
     const { permissions } = req.body;
-    
+
     if (!serverRoles[serverId]) {
         return res.status(404).json({ success: false, message: "Rôles non trouvés" });
     }
-    
+
     const role = serverRoles[serverId].find(r => r.id === roleId);
     if (!role) {
         return res.status(404).json({ success: false, message: "Rôle non trouvé" });
     }
-    
-    role.permissions = permissions || [];
-    saveServerRolesToFile();
-    
-    res.json({ success: true });
+
+    try {
+        await pool.query('UPDATE server_roles SET permissions = $1 WHERE id = $2', [permissions || [], roleId]);
+        role.permissions = permissions || [];
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Erreur lors de la mise à jour des permissions du rôle:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de la mise à jour des permissions du rôle" });
+    }
 });
 
 // Obtenir les invitations d'un serveur
@@ -941,111 +1004,121 @@ app.get('/servers/:serverId/invites', (req, res) => {
 });
 
 // Retirer une invitation d'un serveur
-app.delete('/servers/:serverId/invites/:username', (req, res) => {
+app.delete('/servers/:serverId/invites/:username', async (req, res) => {
     const { serverId, username } = req.params;
-    
+
     if (!serverInvites[serverId]) {
         return res.status(404).json({ success: false, message: "Invitations non trouvées" });
     }
-    
-    serverInvites[serverId] = serverInvites[serverId].filter(u => u !== username);
-    saveServerInvitesToFile();
-    
-    res.json({ success: true, invites: serverInvites[serverId] });
+
+    try {
+        await pool.query('DELETE FROM server_invites WHERE server_id = $1 AND username = $2', [serverId, username]);
+        serverInvites[serverId] = serverInvites[serverId].filter(u => u !== username);
+        res.json({ success: true, invites: serverInvites[serverId] });
+    } catch (error) {
+        console.error('Erreur lors du retrait de l\'invitation:', error);
+        res.status(500).json({ success: false, message: "Erreur lors du retrait de l'invitation" });
+    }
 });
 
-// Obtenir la date de création d'un compte depuis logs-login.txt
-app.post('/get_account_creation_date', (req, res) => {
+// Obtenir la date de création d'un compte depuis PostgreSQL
+app.post('/get_account_creation_date', async (req, res) => {
     const { username } = req.body;
-    
+
     if (!username) {
         return res.status(400).json({ success: false, message: "Nom d'utilisateur requis" });
     }
-    
-    try {
-        if (fs.existsSync(loginLogFile)) {
-            const data = fs.readFileSync(loginLogFile, 'utf8');
-            const lines = data.split('\n').filter(line => line.trim());
-            
-            for (const line of lines) {
-                const parts = line.split('|');
-                if (parts[0] === username) {
-                    const timestamp = parts[3];
-                    if (timestamp) {
-                        return res.json({ success: true, creationDate: timestamp });
-                    }
-                }
-            }
-        }
-        
-        return res.status(404).json({ success: false, message: "Utilisateur non trouvé" });
-    } catch (error) {
-        console.error('Erreur lors de la récupération de la date de création:', error);
-        return res.status(500).json({ success: false, message: "Erreur serveur" });
-    }
-});
 
-// Inviter un ami à un serveur
-app.post('/servers/:serverId/invite', (req, res) => {
-    const { serverId } = req.params;
-    const { username } = req.body;
-    
-    if (!servers[serverId]) {
-        return res.status(404).json({ success: false, message: "Serveur non trouvé" });
-    }
-    
     if (!users[username]) {
         return res.status(404).json({ success: false, message: "Utilisateur non trouvé" });
     }
-    
-    if (!serverInvites[serverId]) {
-        serverInvites[serverId] = [];
-    }
-    
-    if (serverInvites[serverId].includes(username)) {
-        return res.status(400).json({ success: false, message: "Utilisateur déjà invité" });
-    }
-    
-    serverInvites[serverId].push(username);
-    saveServerInvitesToFile();
-    
-    res.json({ success: true, invites: serverInvites[serverId] });
+
+    res.json({ success: true, joinedAt: users[username].joinedAt });
 });
 
-// Accepter une invitation à un serveur
-app.post('/servers/:serverId/accept_invite', (req, res) => {
+// Inviter un ami à un serveur
+app.post('/servers/:serverId/invite', async (req, res) => {
     const { serverId } = req.params;
     const { username } = req.body;
-    
+
     if (!servers[serverId]) {
         return res.status(404).json({ success: false, message: "Serveur non trouvé" });
     }
-    
-    if (!serverInvites[serverId] || !serverInvites[serverId].includes(username)) {
-        return res.status(404).json({ success: false, message: "Invitation non trouvée" });
+
+    if (!users[username]) {
+        return res.status(404).json({ success: false, message: "Utilisateur non trouvé" });
     }
-    
-    // Ajouter l'utilisateur au serveur
-    if (!servers[serverId].members) {
-        servers[serverId].members = [];
+
+    try {
+        const result = await pool.query('SELECT * FROM server_invites WHERE server_id = $1 AND username = $2', [serverId, username]);
+        if (result.rows.length > 0) {
+            return res.status(400).json({ success: false, message: "Utilisateur déjà invité" });
+        }
+
+        await pool.query(
+            'INSERT INTO server_invites (server_id, username) VALUES ($1, $2)',
+            [serverId, username]
+        );
+
+        // Notifier l'utilisateur invité
+        io.emit('server_invite_received', { serverId, username });
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Erreur lors de l\'invitation au serveur:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de l'invitation au serveur" });
     }
-    
-    if (!servers[serverId].members.includes(username)) {
-        servers[serverId].members.push(username);
-        saveServersToFile();
+});
+
+// Accepter une invitation à un serveur
+app.post('/servers/:serverId/accept_invite', async (req, res) => {
+    const { serverId } = req.params;
+    const { username } = req.body;
+
+    if (!servers[serverId]) {
+        return res.status(404).json({ success: false, message: "Serveur non trouvé" });
     }
-    
-    // Retirer l'invitation
-    serverInvites[serverId] = serverInvites[serverId].filter(u => u !== username);
-    saveServerInvitesToFile();
-    
-    res.json({ success: true, server: servers[serverId] });
+
+    if (!users[username]) {
+        return res.status(404).json({ success: false, message: "Utilisateur non trouvé" });
+    }
+
+    try {
+        // Retirer l'invitation
+        await pool.query('DELETE FROM server_invites WHERE server_id = $1 AND username = $2', [serverId, username]);
+
+        if (serverInvites[serverId]) {
+            serverInvites[serverId] = serverInvites[serverId].filter(u => u !== username);
+        }
+
+        // Ajouter l'utilisateur au serveur
+        await pool.query('INSERT INTO server_members (server_id, username) VALUES ($1, $2)', [serverId, username]);
+
+        if (!servers[serverId].members.includes(username)) {
+            servers[serverId].members.push(username);
+        }
+
+        // Ajouter l'utilisateur au salon général
+        const generalRoomId = servers[serverId].rooms[0];
+        if (generalRoomId && rooms[generalRoomId]) {
+            await pool.query('INSERT INTO room_members (room_id, username) VALUES ($1, $2)', [generalRoomId, username]);
+
+            if (!rooms[generalRoomId].members.includes(username)) {
+                rooms[generalRoomId].members.push(username);
+            }
+        }
+
+        res.json({ success: true, server: servers[serverId] });
+    } catch (error) {
+        console.error('Erreur lors de l\'acceptation de l\'invitation:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de l'acceptation de l'invitation" });
+    }
 });
 
 // Obtenir les invitations en attente pour un utilisateur
 app.get('/users/:username/pending_invites', (req, res) => {
     const { username } = req.params;
-    
+
     const pendingInvites = [];
     
     for (const serverId in serverInvites) {
@@ -1149,7 +1222,14 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-    console.log('🎵 Chordia serveur démarré sur http://localhost:' + PORT);
-});
+// Démarrage du serveur
+const PORT = process.env.PORT || 3000;
+
+async function startServer() {
+    await loadAllData();
+    server.listen(PORT, () => {
+        console.log(`Serveur Chordia démarré sur le port ${PORT}`);
+    });
+}
+
+startServer();
