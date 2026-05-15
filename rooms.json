@@ -1,0 +1,87 @@
+{
+  "1": {
+    "id": "1",
+    "serverId": "1",
+    "name": "général",
+    "creator": "lytex",
+    "members": [
+      "tim",
+      "test",
+      "lytex"
+    ],
+    "type": "text",
+    "createdAt": "2026-05-14T20:34:20.386Z"
+  },
+  "2": {
+    "id": "2",
+    "serverId": "1",
+    "name": "test",
+    "creator": "lytex",
+    "members": [],
+    "type": "text",
+    "createdAt": "2026-05-14T20:34:23.057Z"
+  },
+  "3": {
+    "id": "3",
+    "serverId": "2",
+    "name": "général",
+    "creator": "lytex",
+    "members": [],
+    "type": "text",
+    "createdAt": "2026-05-14T20:36:00.851Z"
+  },
+  "4": {
+    "id": "4",
+    "serverId": "2",
+    "name": "channel",
+    "creator": "lytex",
+    "members": [],
+    "type": "text",
+    "createdAt": "2026-05-14T20:36:10.854Z"
+  },
+  "5": {
+    "id": "5",
+    "serverId": "3",
+    "name": "général",
+    "creator": "lytex",
+    "members": [],
+    "type": "text",
+    "createdAt": "2026-05-14T21:50:00.748Z"
+  },
+  "6": {
+    "id": "6",
+    "serverId": "3",
+    "name": "aaa",
+    "creator": "lytex",
+    "members": [],
+    "type": "text",
+    "createdAt": "2026-05-14T21:50:04.325Z"
+  },
+  "7": {
+    "id": "7",
+    "serverId": "4",
+    "name": "général",
+    "creator": "lytex",
+    "members": [],
+    "type": "text",
+    "createdAt": "2026-05-14T23:21:01.802Z"
+  },
+  "8": {
+    "id": "8",
+    "serverId": "4",
+    "name": "tgaetga",
+    "creator": "lytex",
+    "members": [],
+    "type": "text",
+    "createdAt": "2026-05-14T23:21:06.326Z"
+  },
+  "9": {
+    "id": "9",
+    "serverId": "5",
+    "name": "général",
+    "creator": "lytex",
+    "members": [],
+    "type": "text",
+    "createdAt": "2026-05-14T23:40:13.982Z"
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "1": [
+    {
+      "id": 1,
+      "username": "lytex",
+      "message": "test",
+      "room_id": "1",
+      "timestamp": "2026-05-14T20:34:26.138Z"
+    },
+    {
+      "id": 2,
+      "username": "test",
+      "message": "test",
+      "room_id": "1",
+      "timestamp": "2026-05-14T20:35:26.965Z"
+    },
+    {
+      "id": 3,
+      "username": "lytex",
+      "message": "rarar",
+      "room_id": "1",
+      "timestamp": "2026-05-14T21:31:55.756Z"
+    },
+    {
+      "id": 4,
+      "username": "test",
+      "message": "waaa",
+      "room_id": "1",
+      "timestamp": "2026-05-15T10:06:37.418Z"
+    },
+    {
+      "id": 5,
+      "username": "lytex",
+      "message": "🖤",
+      "room_id": "1",
+      "timestamp": "2026-05-15T11:02:41.365Z"
+    },
+    {
+      "id": 6,
+      "username": "lytex",
+      "message": "aaa",
+      "room_id": "1",
+      "timestamp": "2026-05-15T13:18:56.080Z"
+    }
+  ],
+  "2": [
+    {
+      "id": 1,
+      "username": "lytex",
+      "message": "test",
+      "room_id": "2",
+      "timestamp": "2026-05-14T20:34:28.643Z"
+    },
+    {
+      "id": 2,
+      "username": "test",
+      "message": "test",
+      "room_id": "2",
+      "timestamp": "2026-05-14T20:35:29.219Z"
+    }
+  ],
+  "3": [],
+  "4": [
+    {
+      "id": 1,
+      "username": "lytex",
+      "message": "ww",
+      "room_id": "4",
+      "timestamp": "2026-05-14T20:36:14.611Z"
+    }
+  ]
+}

@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chordia - Discutez avec vos amis</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css?v=2">
+</head>
+<body>
+    <div id="app">
+        <!-- Écran de connexion -->
+        <div id="login-screen" class="screen">
+            <div class="login-container">
+                <div class="logo">
+                    <img src="/logo.png" alt="Chordia Logo" class="logo-img">
+                    <p>Discutez avec vos amis</p>
+                </div>
+                <div class="login-tabs">
+                    <button class="tab-btn active" id="login-tab">Connexion</button>
+                    <button class="tab-btn" id="register-tab">Inscription</button>
+                </div>
+                
+                <!-- Formulaire de connexion -->
+                <form id="login-form" class="login-form">
+                    <input type="text" id="login-username" placeholder="Nom d'utilisateur" required autocomplete="off">
+                    <input type="password" id="login-password" placeholder="Mot de passe" required autocomplete="off">
+                    <button type="submit">Se connecter</button>
+                </form>
+                
+                <!-- Formulaire d'inscription -->
+                <form id="register-form" class="login-form hidden">
+                    <input type="text" id="register-username" placeholder="Nom d'utilisateur (unique)" required autocomplete="off">
+                    <input type="text" id="register-displayname" placeholder="Pseudo d'affichage" required autocomplete="off">
+                    <input type="password" id="register-password" placeholder="Mot de passe" required autocomplete="off">
+                    <button type="submit">S'inscrire</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Écran d'accueil (amis et messages privés) -->
+        <div id="home-screen" class="screen hidden">
+            <div class="home-container">
+                <!-- Barre de serveurs (gauche) -->
+                <div class="server-sidebar">
+                    <div class="server-icon home-icon" title="Accueil" id="home-btn-home">
+                        <img src="/logo.png" alt="Chordia Logo" class="server-logo-img">
+                    </div>
+                    <div class="server-divider"></div>
+                    <div id="server-list-home"></div>
+                    <div class="server-icon add-server" id="add-server-btn-home" title="Ajouter un serveur">
+                        <span>➕</span>
+                    </div>
+                    <div class="user-panel">
+                        <div class="user-avatar" id="user-avatar-home">
+                            <span id="user-avatar-text-home">?</span>
+                        </div>
+                        <div class="user-info-mini">
+                            <span id="current-username-mini-home"></span>
+                            <span class="user-status-text">#0000</span>
+                        </div>
+                        <div class="user-controls">
+                            <button class="control-btn" id="mic-btn-home">🎤</button>
+                            <button class="control-btn" id="headphones-btn-home">🎧</button>
+                            <button class="control-btn" id="settings-btn-home">⚙️</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="home-sidebar">
+                    <div class="home-section">
+                        <h3>Amis</h3>
+                        <div id="friends-list"></div>
+                    </div>
+                    <div class="home-section">
+                        <h3>Demandes d'amis</h3>
+                        <div id="friend-requests-list"></div>
+                    </div>
+                </div>
+                <div class="home-main">
+                    <div class="home-header">
+                        <h2 id="home-title">Messagerie privée</h2>
+                        <div class="chat-toolbar" id="private-chat-toolbar">
+                            <button class="toolbar-btn" id="private-call-btn">📞</button>
+                            <button class="toolbar-btn" id="private-video-btn">📹</button>
+                        </div>
+                    </div>
+                    <div id="private-chat-container" class="private-chat-container">
+                        <div id="private-messages-list" class="private-messages-list"></div>
+                        <form id="private-message-form" class="private-message-form">
+                            <input type="text" id="private-message-input" placeholder="Envoyer un message privé..." autocomplete="off">
+                            <button type="submit">Envoyer</button>
+                        </form>
+                    </div>
+                    <div id="add-friend-container" class="add-friend-container hidden">
+                        <h3>Ajouter un ami</h3>
+                        <form id="add-friend-form">
+                            <input type="text" id="add-friend-username" placeholder="Nom d'utilisateur" required autocomplete="off">
+                            <button type="submit">Envoyer demande</button>
+                        </form>
+                    </div>
+                </div>
+                <div class="profile-sidebar" id="profile-sidebar">
+                    <div class="profile-sidebar-banner"></div>
+                    <div class="profile-sidebar-content">
+                        <div class="profile-sidebar-header">
+                            <button class="close-sidebar-btn" id="close-profile-sidebar">✕</button>
+                        </div>
+                        <div class="profile-sidebar-avatar-container">
+                            <div class="profile-sidebar-avatar" id="sidebar-profile-avatar">
+                                <span id="sidebar-profile-avatar-text">?</span>
+                            </div>
+                            <div class="profile-sidebar-status-indicator" id="sidebar-profile-status-indicator"></div>
+                        </div>
+                        <div class="profile-sidebar-info">
+                            <h2 id="sidebar-profile-displayname" class="sidebar-profile-displayname">Pseudo</h2>
+                            <p id="sidebar-profile-username" class="sidebar-profile-username">@username</p>
+                            <div class="profile-sidebar-badges" id="sidebar-profile-badges"></div>
+                        </div>
+                        <div class="profile-sidebar-details">
+                            <div class="profile-sidebar-detail-item">
+                                <span class="detail-label">Membre depuis</span>
+                                <span class="detail-value" id="sidebar-profile-joined">-</span>
+                            </div>
+                            <div class="profile-sidebar-detail-item">
+                                <span class="detail-label">Amis depuis</span>
+                                <span class="detail-value" id="sidebar-profile-friends-since">-</span>
+                            </div>
+                            <div class="profile-sidebar-detail-item clickable">
+                                <span class="detail-label">🎮 Collection de jeux</span>
+                            </div>
+                            <div class="profile-sidebar-detail-item clickable">
+                                <span class="detail-label">Serveurs en commun</span>
+                                <span class="detail-value" id="sidebar-profile-mutual-servers">0</span>
+                                <span class="detail-arrow">→</span>
+                            </div>
+                            <div class="profile-sidebar-detail-item clickable">
+                                <span class="detail-label">Amis en commun</span>
+                                <span class="detail-value" id="sidebar-profile-mutual-friends">0</span>
+                                <span class="detail-arrow">→</span>
+                            </div>
+                        </div>
+                        <div class="profile-sidebar-footer">
+                            <a href="#" class="view-full-profile-link">Voir le profil complet</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Écran principal -->
+        <div id="main-screen" class="screen hidden">
+            <div class="discord-container">
+                <!-- Barre de serveurs (gauche) -->
+                <div class="server-sidebar">
+                    <div class="server-icon home-icon" title="Accueil" id="home-btn-main">
+                        <img src="/logo.png" alt="Chordia Logo" class="server-logo-img">
+                    </div>
+                    <div class="server-divider"></div>
+                    <div id="server-list"></div>
+                    <div class="server-icon add-server" id="add-server-btn" title="Ajouter un serveur">
+                        <span>➕</span>
+                    </div>
+                    <div class="user-panel">
+                        <div class="user-avatar" id="user-avatar">
+                            <span id="user-avatar-text">?</span>
+                        </div>
+                        <div class="user-info-mini">
+                            <span id="current-username-mini"></span>
+                            <span class="user-status-text">#0000</span>
+                        </div>
+                        <div class="user-controls">
+                            <button class="control-btn" id="mic-btn">🎤</button>
+                            <button class="control-btn" id="headphones-btn">🎧</button>
+                            <button class="control-btn" id="settings-btn">⚙️</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Barre de channels (centre-gauche) -->
+                <div class="channels-sidebar">
+                    <div class="server-header">
+                        <h2 id="server-name">Chordia</h2>
+                        <button class="icon-btn-small" id="server-settings-btn">⚙️</button>
+                    </div>
+                    <div class="channels-list">
+                        <div class="channel-category">
+                            <div class="category-header">
+                                <span>📢 SALONS TEXTUELS</span>
+                                <button class="add-channel-btn" id="add-channel-btn">➕</button>
+                            </div>
+                            <div id="text-channels-list"></div>
+                        </div>
+                        <div class="channel-category">
+                            <div class="category-header">
+                                <span>🔊 SALONS VOCAUX</span>
+                                <button class="add-channel-btn" id="add-voice-channel-btn">➕</button>
+                            </div>
+                            <div id="voice-channels-list"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Zone de chat principale (centre) -->
+                <div class="main-chat">
+                    <div class="chat-header">
+                        <div class="channel-info">
+                            <span class="channel-hash">#</span>
+                            <span id="current-channel-name">général</span>
+                        </div>
+                        <div class="chat-toolbar">
+                            <button class="toolbar-btn" id="call-btn">📞</button>
+                            <button class="toolbar-btn" id="video-btn">�</button>
+                            <button class="toolbar-btn">🔍</button>
+                            <button class="toolbar-btn">📌</button>
+                            <button class="toolbar-btn" id="members-toggle-btn">�</button>
+                        </div>
+                    </div>
+                    
+                    <div id="messages-container" class="messages-container"></div>
+                    
+                    <div id="typing-indicator" class="typing-indicator hidden"></div>
+                    
+                    <form id="message-form" class="message-form">
+                        <button type="button" class="attach-btn">➕</button>
+                        <input type="text" id="message-input" placeholder="Envoyer un message dans #général" autocomplete="off">
+                        <div class="message-actions">
+                            <button type="button" class="emoji-btn">�</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Barre de membres (droite) -->
+                <div class="members-sidebar" id="members-sidebar">
+                    <div class="members-header">
+                        <span>En ligne — <span id="online-count">0</span></span>
+                    </div>
+                    <div id="online-members-list"></div>
+                    <div class="members-header">
+                        <span>Hors ligne — <span id="offline-count">0</span></span>
+                    </div>
+                    <div id="offline-members-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal de création de salon -->
+        <div id="create-room-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Créer un nouveau salon</h3>
+                <form id="create-room-form">
+                    <input type="text" id="room-name-input" placeholder="Nom du salon" required autocomplete="off">
+                    <div class="modal-buttons">
+                        <button type="button" id="cancel-room-btn">Annuler</button>
+                        <button type="submit">Créer</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Modal des paramètres -->
+        <div id="settings-modal" class="modal hidden">
+            <div class="modal-content settings-modal">
+                <div class="settings-header">
+                    <h3>Paramètres utilisateur</h3>
+                    <button class="close-modal-btn" id="close-settings-btn">✕</button>
+                </div>
+                <div class="settings-body">
+                    <div class="settings-section">
+                        <h4>Profil</h4>
+                        <div class="settings-item">
+                            <label>Photo de profil</label>
+                            <div class="avatar-upload-container">
+                                <div class="avatar-preview" id="settings-avatar-preview">
+                                    <span id="settings-avatar-text">?</span>
+                                </div>
+                                <button class="upload-avatar-btn" id="settings-upload-avatar-btn">📷 Changer</button>
+                                <input type="file" id="settings-avatar-input" accept=".png,.jpg,.jpeg" style="display: none;">
+                            </div>
+                        </div>
+                        <div class="settings-item">
+                            <label>Description</label>
+                            <textarea id="settings-bio" class="settings-bio" placeholder="Ajoutez une bio..."></textarea>
+                        </div>
+                        <div class="settings-item">
+                            <label>Nom d'utilisateur</label>
+                            <input type="text" id="settings-username" value="">
+                        </div>
+                        <div class="settings-item">
+                            <label>Statut</label>
+                            <select id="settings-status">
+                                <option value="online">🟢 En ligne</option>
+                                <option value="idle">🟡 Inactif</option>
+                                <option value="dnd">🔴 Ne pas déranger</option>
+                                <option value="offline">⚫ Invisible</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <h4>Sécurité</h4>
+                        <div class="settings-item">
+                            <label>Mot de passe actuel</label>
+                            <input type="password" id="current-password" placeholder="Entrez votre mot de passe actuel">
+                        </div>
+                        <div class="settings-item">
+                            <label>Nouveau mot de passe</label>
+                            <input type="password" id="new-password" placeholder="Entrez votre nouveau mot de passe">
+                        </div>
+                        <div class="settings-item">
+                            <button class="add-role-btn" id="change-password-btn">Changer le mot de passe</button>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <h4>Apparence</h4>
+                        <div class="settings-item">
+                            <label>Thème</label>
+                            <select id="settings-theme">
+                                <option value="dark">Sombre (Discord)</option>
+                                <option value="light">Clair</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-buttons">
+                    <button type="button" id="cancel-settings-btn">Annuler</button>
+                    <button type="button" id="save-settings-btn">Sauvegarder</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal de création de serveur -->
+        <div id="create-server-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Créer un serveur</h3>
+                <form id="create-server-form">
+                    <input type="text" id="server-name-input" placeholder="Nom du serveur" required autocomplete="off">
+                    <div class="modal-buttons">
+                        <button type="button" id="cancel-server-btn">Annuler</button>
+                        <button type="submit">Créer</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Modal d'appel -->
+        <div id="call-modal" class="modal hidden">
+            <div class="modal-content call-modal-content">
+                <div class="call-header">
+                    <h3 id="call-status">Appel en cours...</h3>
+                    <button class="close-modal-btn" id="close-call-btn">✕</button>
+                </div>
+                <div class="call-videos">
+                    <video id="local-video" autoplay muted playsinline></video>
+                    <video id="remote-video" autoplay playsinline></video>
+                </div>
+                <div class="call-controls">
+                    <button class="call-control-btn" id="hangup-btn">📞 Raccrocher</button>
+                    <button class="call-control-btn" id="mute-btn">🎤 Muet</button>
+                    <button class="call-control-btn" id="toggle-video-btn">📷 Vidéo</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal de profil utilisateur -->
+        <div id="profile-modal" class="modal hidden">
+            <div class="modal-content profile-modal-content">
+                <div class="profile-banner" id="profile-banner">
+                    <button class="close-modal-btn" id="close-profile-btn">✕</button>
+                </div>
+                <div class="profile-info">
+                    <div class="profile-avatar-container">
+                        <div class="profile-avatar" id="profile-avatar">
+                            <span id="profile-avatar-text">?</span>
+                        </div>
+                        <div class="profile-status-indicator" id="profile-status-indicator"></div>
+                    </div>
+                    <div class="profile-details">
+                        <h2 id="profile-displayname" class="profile-displayname-large">Pseudo d'affichage</h2>
+                        <p id="profile-username" class="profile-username-small">@Nom d'utilisateur</p>
+                        <p id="profile-status-text" class="profile-status-text"></p>
+                        <p id="profile-bio" class="profile-bio-display"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal de paramètres de serveur -->
+        <div id="server-settings-modal" class="modal hidden">
+            <div class="modal-content settings-modal">
+                <div class="settings-header">
+                    <h3>Paramètres du serveur</h3>
+                    <button class="close-modal-btn" id="close-server-settings-btn">✕</button>
+                </div>
+                <div class="settings-body">
+                    <div class="settings-section">
+                        <h4>Général</h4>
+                        <div class="settings-item">
+                            <label>Nom du serveur</label>
+                            <input type="text" id="server-name-input" value="">
+                        </div>
+                        <div class="settings-item">
+                            <label>Logo du serveur</label>
+                            <div class="avatar-upload-container">
+                                <div class="avatar-preview" id="server-logo-preview">
+                                    <span id="server-logo-text">?</span>
+                                </div>
+                                <button class="upload-avatar-btn" id="upload-server-logo-btn">📷 Changer</button>
+                                <input type="file" id="server-logo-input" accept=".png,.jpg,.jpeg" style="display: none;">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <h4>Invitations</h4>
+                        <div class="settings-item">
+                            <label>Inviter un ami</label>
+                            <select id="invite-friend-select"></select>
+                            <button class="add-role-btn" id="invite-friend-btn">Inviter</button>
+                        </div>
+                        <div id="invites-list"></div>
+                    </div>
+                    <div class="settings-section">
+                        <h4>Rôles</h4>
+                        <div class="settings-item">
+                            <button class="add-role-btn" id="add-role-btn">➕ Ajouter un rôle</button>
+                        </div>
+                        <div id="roles-list"></div>
+                    </div>
+                    <div class="settings-section">
+                        <h4>Permissions</h4>
+                        <div id="permissions-list"></div>
+                    </div>
+                </div>
+                <div class="modal-buttons">
+                    <button type="button" id="cancel-server-settings-btn">Annuler</button>
+                    <button type="button" id="save-server-settings-btn">Sauvegarder</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
