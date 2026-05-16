@@ -1457,11 +1457,9 @@ io.on('connection', (socket) => {
 
         if (isPrivate) {
             // Private call - send to specific user
-            const targetSocket = Object.keys(io.sockets.sockets).find(
-                id => users[Object.keys(users).find(u => users[u].socketId === id)]?.username === target
-            );
-            if (targetSocket) {
-                io.to(targetSocket).emit('call_offer', {
+            const targetUser = users[target];
+            if (targetUser && targetUser.socketId) {
+                io.to(targetUser.socketId).emit('call_offer', {
                     offer: offer,
                     username: username,
                     callerSocketId: socket.id,
@@ -1489,11 +1487,9 @@ io.on('connection', (socket) => {
 
         if (isPrivate) {
             // Private call - send to specific user
-            const targetSocket = Object.keys(io.sockets.sockets).find(
-                id => users[Object.keys(users).find(u => users[u].socketId === id)]?.username === target
-            );
-            if (targetSocket) {
-                io.to(targetSocket).emit('ice_candidate', { candidate: candidate });
+            const targetUser = users[target];
+            if (targetUser && targetUser.socketId) {
+                io.to(targetUser.socketId).emit('ice_candidate', { candidate: candidate });
             }
         } else {
             // Room call - send to room
@@ -1506,11 +1502,9 @@ io.on('connection', (socket) => {
 
         if (isPrivate) {
             // Private call - send to specific user
-            const targetSocket = Object.keys(io.sockets.sockets).find(
-                id => users[Object.keys(users).find(u => users[u].socketId === id)]?.username === target
-            );
-            if (targetSocket) {
-                io.to(targetSocket).emit('call_ended');
+            const targetUser = users[target];
+            if (targetUser && targetUser.socketId) {
+                io.to(targetUser.socketId).emit('call_ended');
             }
         } else {
             // Room call - send to room
