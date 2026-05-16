@@ -71,12 +71,18 @@ async function initializeDatabase() {
                 room_id VARCHAR(255) NOT NULL,
                 username VARCHAR(255) NOT NULL,
                 message TEXT NOT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                file_name TEXT,
-                file_type TEXT,
-                file_data TEXT
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
+
+        // Add file columns to messages table if they don't exist
+        try {
+            await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_name TEXT');
+            await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_type TEXT');
+            await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_data TEXT');
+        } catch (error) {
+            console.log('File columns already exist in messages table');
+        }
 
         // Create friends table
         await pool.query(`
@@ -104,12 +110,18 @@ async function initializeDatabase() {
                 from_username VARCHAR(255) NOT NULL,
                 to_username VARCHAR(255) NOT NULL,
                 message TEXT NOT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                file_name TEXT,
-                file_type TEXT,
-                file_data TEXT
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
+
+        // Add file columns to private_messages table if they don't exist
+        try {
+            await pool.query('ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS file_name TEXT');
+            await pool.query('ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS file_type TEXT');
+            await pool.query('ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS file_data TEXT');
+        } catch (error) {
+            console.log('File columns already exist in private_messages table');
+        }
 
         // Create server_roles table
         await pool.query(`
