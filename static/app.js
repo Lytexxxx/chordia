@@ -1917,6 +1917,14 @@ function scrollToPrivateBottom() {
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
+function sendPrivateMessage(to, message) {
+    socket.emit('private_message', {
+        from: currentUsername,
+        to: to,
+        message: message
+    });
+}
+
 async function openServerSettings() {
     if (!currentServerId) {
         alert('Veuillez sélectionner un serveur');
