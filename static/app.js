@@ -375,6 +375,7 @@ function initializeSocket() {
     });
 
     socket.on('private_message', (data) => {
+        console.log('Message privé reçu:', data);
         if (currentPrivateChatUser && (data.from === currentPrivateChatUser || data.to === currentPrivateChatUser)) {
             addPrivateMessage(data, true);
         }
@@ -566,13 +567,14 @@ async function loadServersHome() {
 
 async function selectServer(server) {
     currentServerId = server.id;
-    
+    currentPrivateChatUser = null; // Clear private chat when selecting a server
+
     // Si on est sur l'écran d'accueil, basculer vers l'écran principal
     if (!document.getElementById('home-screen').classList.contains('hidden')) {
         document.getElementById('home-screen').classList.add('hidden');
         document.getElementById('main-screen').classList.remove('hidden');
     }
-    
+
     // Mettre à jour le nom du serveur affiché
     document.getElementById('server-name').textContent = server.name;
     
@@ -781,9 +783,10 @@ function joinRoom(room) {
     if (currentRoomId) {
         socket.emit('leave', { username: currentUsername, room_id: currentRoomId });
     }
-    
+
     currentRoomId = room.id;
-    
+    currentPrivateChatUser = null; // Clear private chat when joining a room
+
     // Rejoindre le nouveau salon
     socket.emit('join', { username: currentUsername, room_id: room.id });
     
