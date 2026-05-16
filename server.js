@@ -1445,6 +1445,48 @@ io.on('connection', (socket) => {
         io.to(room_id).emit('new_message', msgData);
     });
 
+    socket.on('private_message', async (data) => {
+        const { from, to, message } = data;
+
+        console.log('Message privé reçu:', data);
+
+        if (!from || !to || !message) return;
+
+        const conversationKey = [from, to].sort().join('_');
+
+        if (!privateMessages[conversationKey]) {
+            privateMessages[conversationKey] = [];
+        }
+
+        const msgData = {
+            id: (privateMessages[conversationKey]?.length || 0) + 1,
+            from: from,
+            to: to,
+            message: message,
+            timestamp: new Date().toISOString()
+        };
+
+        // Save to PostgreSQL
+        try {
+            await pool.query(
+                'INSERT INTO private_messages (from_username, to_username, message) VALUES ($1, $2, $3)',
+                [from, to, message]
+            );
+        } catch (error) {
+            console.error('Erreur lors de la sauvegarde du message privé dans PostgreSQL:', error);
+        }
+
+        privateMessages[conversationKey].push(msgData);
+
+        // Send to both users
+        if (users[from] && users[from].socketId) {
+            io.to(users[from].socketId).emit('private_message', msgData);
+        }
+        if (users[to] && users[to].socketId) {
+            io.to(users[to].socketId).emit('private_message', msgData);
+        }
+    });
+
     socket.on('typing', (data) => {
         const { username, room_id, is_typing } = data;
 
