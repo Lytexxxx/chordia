@@ -71,7 +71,10 @@ async function initializeDatabase() {
                 room_id VARCHAR(255) NOT NULL,
                 username VARCHAR(255) NOT NULL,
                 message TEXT NOT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                file_name TEXT,
+                file_type TEXT,
+                file_data TEXT
             );
         `);
 
@@ -101,7 +104,10 @@ async function initializeDatabase() {
                 from_username VARCHAR(255) NOT NULL,
                 to_username VARCHAR(255) NOT NULL,
                 message TEXT NOT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                file_name TEXT,
+                file_type TEXT,
+                file_data TEXT
             );
         `);
 
@@ -191,8 +197,8 @@ app.post('/private_message_file', async (req, res) => {
         }
 
         const result = await pool.query(
-            'INSERT INTO private_messages (from_username, to_username, message) VALUES ($1, $2, $3) RETURNING *',
-            [from, to, message]
+            'INSERT INTO private_messages (from_username, to_username, message, file_name, file_type, file_data) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+            [from, to, message, file.name, file.type, file.data]
         );
 
         const msgData = {
@@ -201,7 +207,11 @@ app.post('/private_message_file', async (req, res) => {
             to: result.rows[0].to_username,
             message: result.rows[0].message,
             timestamp: result.rows[0].timestamp,
-            file: file
+            file: {
+                name: result.rows[0].file_name,
+                type: result.rows[0].file_type,
+                data: result.rows[0].file_data
+            }
         };
 
         privateMessages[conversationKey].push(msgData);
@@ -317,12 +327,20 @@ async function loadMessagesFromDB() {
             if (!messages[row.room_id]) {
                 messages[row.room_id] = [];
             }
-            messages[row.room_id].push({
+            const msgData = {
                 id: row.id,
                 username: row.username,
                 message: row.message,
                 timestamp: row.timestamp
-            });
+            };
+            if (row.file_name) {
+                msgData.file = {
+                    name: row.file_name,
+                    type: row.file_type,
+                    data: row.file_data
+                };
+            }
+            messages[row.room_id].push(msgData);
         });
         console.log(`Chargé ${Object.keys(messages).length} historiques de messages depuis PostgreSQL`);
     } catch (error) {
@@ -371,13 +389,21 @@ async function loadPrivateMessagesFromDB() {
             if (!privateMessages[conversationKey]) {
                 privateMessages[conversationKey] = [];
             }
-            privateMessages[conversationKey].push({
+            const msgData = {
                 id: row.id,
                 from: row.from_username,
                 to: row.to_username,
                 message: row.message,
                 timestamp: row.timestamp
-            });
+            };
+            if (row.file_name) {
+                msgData.file = {
+                    name: row.file_name,
+                    type: row.file_type,
+                    data: row.file_data
+                };
+            }
+            privateMessages[conversationKey].push(msgData);
         });
         console.log(`Chargé ${Object.keys(privateMessages).length} conversations privées depuis PostgreSQL`);
     } catch (error) {
@@ -1362,7 +1388,7 @@ io.on('connection', (socket) => {
         io.to(room_id).emit('user_left', { username: username, room_id: room_id });
     });
     
-    socket.on('send_message', (data) => {
+    socket.on('send_message', async (data) => {
         const { username, room_id, message, file } = data;
 
         if (!username || !room_id || !message && !file) return;
@@ -1377,6 +1403,25 @@ io.on('connection', (socket) => {
 
         if (file) {
             msgData.file = file;
+            // Save file to PostgreSQL
+            try {
+                await pool.query(
+                    'INSERT INTO messages (room_id, username, message, file_name, file_type, file_data) VALUES ($1, $2, $3, $4, $5, $6)',
+                    [room_id, username, message || '', file.name, file.type, file.data]
+                );
+            } catch (error) {
+                console.error('Erreur lors de la sauvegarde du fichier dans PostgreSQL:', error);
+            }
+        } else {
+            // Save message to PostgreSQL
+            try {
+                await pool.query(
+                    'INSERT INTO messages (room_id, username, message) VALUES ($1, $2, $3)',
+                    [room_id, username, message]
+                );
+            } catch (error) {
+                console.error('Erreur lors de la sauvegarde du message dans PostgreSQL:', error);
+            }
         }
 
         if (!messages[room_id]) {
