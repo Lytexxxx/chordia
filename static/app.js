@@ -19,6 +19,7 @@ let isMuted = false;
 let isVideoEnabled = true;
 let pendingCandidates = [];
 let selectedMicrophone = null;
+let remoteAudioElements = {};
 const rtcServers = {
     iceServers: [
         { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }
@@ -453,6 +454,16 @@ function initializeSocket() {
                 // Handle remote stream
                 peerConnection.ontrack = (event) => {
                     document.getElementById('remote-video').srcObject = event.streams[0];
+
+                    // Create audio element for remote user
+                    const audio = document.createElement('audio');
+                    audio.srcObject = event.streams[0];
+                    audio.autoplay = true;
+                    audio.style.display = 'none';
+                    document.body.appendChild(audio);
+
+                    // Store audio element by username
+                    remoteAudioElements[username] = audio;
                 };
 
                 // Add caller to call participants
@@ -498,6 +509,13 @@ function initializeSocket() {
             await peerConnection.setRemoteDescription(
                 new RTCSessionDescription(data.answer)
             );
+
+            // If we have a remote audio element stored on peerConnection, move it to remoteAudioElements
+            if (peerConnection.remoteAudio) {
+                const targetUsername = currentPrivateChatUser || currentRoomId;
+                remoteAudioElements[targetUsername] = peerConnection.remoteAudio;
+                peerConnection.remoteAudio = null;
+            }
 
             // ajouter les ICE en attente
             for (const candidate of pendingCandidates) {
@@ -1550,6 +1568,16 @@ async function startCall() {
         // Handle remote stream
         peerConnection.ontrack = (event) => {
             document.getElementById('remote-video').srcObject = event.streams[0];
+
+            // Create audio element for remote user
+            const audio = document.createElement('audio');
+            audio.srcObject = event.streams[0];
+            audio.autoplay = true;
+            audio.style.display = 'none';
+            document.body.appendChild(audio);
+
+            // Store audio element by username (we'll get this from the remote user)
+            peerConnection.remoteAudio = audio;
         };
 
         // Add current user to call participants
@@ -1632,6 +1660,16 @@ async function startVideoCall() {
         // Handle remote stream
         peerConnection.ontrack = (event) => {
             document.getElementById('remote-video').srcObject = event.streams[0];
+
+            // Create audio element for remote user
+            const audio = document.createElement('audio');
+            audio.srcObject = event.streams[0];
+            audio.autoplay = true;
+            audio.style.display = 'none';
+            document.body.appendChild(audio);
+
+            // Store audio element by username (we'll get this from the remote user)
+            peerConnection.remoteAudio = audio;
         };
 
         // Add current user to call participants
@@ -1669,17 +1707,23 @@ function endCall() {
         localStream.getTracks().forEach(track => track.stop());
         localStream = null;
     }
-    
+
     if (peerConnection) {
         peerConnection.close();
         peerConnection = null;
     }
-    
+
     document.getElementById('call-modal').classList.add('hidden');
     document.getElementById('local-video').srcObject = null;
     document.getElementById('remote-video').srcObject = null;
     isCallActive = false;
-    
+
+    // Clean up audio elements
+    Object.values(remoteAudioElements).forEach(audio => {
+        audio.remove();
+    });
+    remoteAudioElements = {};
+
     // Notify others that user left call
     socket.emit('call_left', {
         username: currentUsername,
@@ -2131,23 +2175,9 @@ function clearCallParticipants() {
 }
 
 function adjustParticipantVolume(username, volume) {
-    const remoteVideo = document.getElementById('remote-video');
-    if (remoteVideo && remoteVideo.srcObject) {
-        const audioTracks = remoteVideo.srcObject.getAudioTracks();
-        audioTracks.forEach(track => {
-            if (track.enabled) {
-                // WebRTC doesn't support per-track volume control directly
-                // We need to use the Web Audio API
-                if (!remoteVideo.audioContext) {
-                    remoteVideo.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    remoteVideo.source = remoteVideo.audioContext.createMediaStreamSource(remoteVideo.srcObject);
-                    remoteVideo.gainNode = remoteVideo.audioContext.createGain();
-                    remoteVideo.source.connect(remoteVideo.gainNode);
-                    remoteVideo.gainNode.connect(remoteVideo.audioContext.destination);
-                }
-                remoteVideo.gainNode.gain.value = volume;
-            }
-        });
+    const audio = remoteAudioElements[username];
+    if (audio) {
+        audio.volume = volume;
     }
 }
 
