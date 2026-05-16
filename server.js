@@ -1356,10 +1356,10 @@ app.get('/users/:username/pending_invites', (req, res) => {
 // Socket.IO
 io.on('connection', (socket) => {
     console.log('Client connecté:', socket.id);
-    
+
     socket.on('disconnect', () => {
         console.log('Client déconnecté:', socket.id);
-        
+
         // Retirer l'utilisateur des rooms et mettre son statut à offline
         for (const username in users) {
             if (users[username].socketId === socket.id) {
@@ -1369,15 +1369,15 @@ io.on('connection', (socket) => {
             }
         }
     });
-    
+
     socket.on('join', (data) => {
         const { username, room_id } = data;
-        
+
         if (users[username]) {
             users[username].socketId = socket.id;
             users[username].status = 'online';
         }
-        
+
         socket.join(room_id);
 
         if (rooms[room_id] && !rooms[room_id].members.includes(username)) {
@@ -1387,10 +1387,10 @@ io.on('connection', (socket) => {
         io.to(room_id).emit('user_joined', { username: username, room_id: room_id });
         io.emit('user_status', { username: username, status: 'online' });
     });
-    
+
     socket.on('leave', (data) => {
         const { username, room_id } = data;
-        
+
         socket.leave(room_id);
 
         if (rooms[room_id]) {
@@ -1399,7 +1399,7 @@ io.on('connection', (socket) => {
 
         io.to(room_id).emit('user_left', { username: username, room_id: room_id });
     });
-    
+
     socket.on('send_message', async (data) => {
         const { username, room_id, message, file } = data;
 
@@ -1444,13 +1444,80 @@ io.on('connection', (socket) => {
 
         io.to(room_id).emit('new_message', msgData);
     });
-    
+
     socket.on('typing', (data) => {
         const { username, room_id, is_typing } = data;
-        
+
         socket.to(room_id).emit('user_typing', { username, is_typing });
     });
-    
+
+    // WebRTC signaling
+    socket.on('call_offer', async (data) => {
+        const { offer, username, target, isPrivate, type } = data;
+
+        if (isPrivate) {
+            // Private call - send to specific user
+            const targetSocket = Object.keys(io.sockets.sockets).find(
+                id => users[Object.keys(users).find(u => users[u].socketId === id)]?.username === target
+            );
+            if (targetSocket) {
+                io.to(targetSocket).emit('call_offer', {
+                    offer: offer,
+                    username: username,
+                    callerSocketId: socket.id,
+                    type: type
+                });
+            }
+        } else {
+            // Room call - send to room
+            io.to(target).emit('call_offer', {
+                offer: offer,
+                username: username,
+                callerSocketId: socket.id,
+                type: type
+            });
+        }
+    });
+
+    socket.on('call_answer', async (data) => {
+        const { answer, callerSocketId } = data;
+        io.to(callerSocketId).emit('call_answer', { answer: answer });
+    });
+
+    socket.on('ice_candidate', async (data) => {
+        const { candidate, target, isPrivate } = data;
+
+        if (isPrivate) {
+            // Private call - send to specific user
+            const targetSocket = Object.keys(io.sockets.sockets).find(
+                id => users[Object.keys(users).find(u => users[u].socketId === id)]?.username === target
+            );
+            if (targetSocket) {
+                io.to(targetSocket).emit('ice_candidate', { candidate: candidate });
+            }
+        } else {
+            // Room call - send to room
+            io.to(target).emit('ice_candidate', { candidate: candidate });
+        }
+    });
+
+    socket.on('call_ended', (data) => {
+        const { target, isPrivate } = data;
+
+        if (isPrivate) {
+            // Private call - send to specific user
+            const targetSocket = Object.keys(io.sockets.sockets).find(
+                id => users[Object.keys(users).find(u => users[u].socketId === id)]?.username === target
+            );
+            if (targetSocket) {
+                io.to(targetSocket).emit('call_ended');
+            }
+        } else {
+            // Room call - send to room
+            io.to(target).emit('call_ended');
+        }
+    });
+
     socket.on('update_status', (data) => {
         const { username, status } = data;
         
