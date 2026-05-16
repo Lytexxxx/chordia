@@ -18,6 +18,7 @@ let isCallActive = false;
 let isMuted = false;
 let isVideoEnabled = true;
 let pendingCandidates = [];
+let selectedMicrophone = null;
 const rtcServers = {
     iceServers: [
         { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }
@@ -32,8 +33,14 @@ let userSettings = savedSettings ? JSON.parse(savedSettings) : {
     theme: 'dark',
     bio: '',
     avatarImage: null,
-    bannerImage: null
+    bannerImage: null,
+    microphone: null
 };
+
+// Load selected microphone
+if (userSettings.microphone) {
+    selectedMicrophone = userSettings.microphone;
+}
 let users = {};
 let servers = {};
 
@@ -84,10 +91,30 @@ function setupEventListeners() {
     document.getElementById('create-room-form').addEventListener('submit', handleCreateRoom);
     
     // Paramètres
-    document.getElementById('settings-btn').addEventListener('click', () => {
+    document.getElementById('settings-btn').addEventListener('click', async () => {
         document.getElementById('settings-modal').classList.remove('hidden');
         document.getElementById('settings-username').value = currentUsername;
         document.getElementById('settings-status').value = userSettings.status;
+
+        // Populate microphone dropdown
+        const microphoneSelect = document.getElementById('settings-microphone');
+        microphoneSelect.innerHTML = '<option value="">Défaut</option>';
+
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const microphones = devices.filter(device => device.kind === 'audioinput');
+            microphones.forEach(microphone => {
+                const option = document.createElement('option');
+                option.value = microphone.deviceId;
+                option.textContent = microphone.label || `Microphone ${microphone.deviceId.slice(0, 5)}...`;
+                if (selectedMicrophone === microphone.deviceId) {
+                    option.selected = true;
+                }
+                microphoneSelect.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Erreur lors de l\'énumération des microphones:', error);
+        }
         document.getElementById('settings-theme').value = userSettings.theme;
         document.getElementById('settings-bio').value = userSettings.bio || '';
         document.getElementById('settings-avatar-text').textContent = currentDisplayname.charAt(0).toUpperCase();
@@ -394,10 +421,11 @@ function initializeSocket() {
             const { offer, username, callerSocketId, type } = data;
 
             if (confirm(`${username} vous appelle (${type === 'video' ? 'vidéo' : 'audio'}). Accepter?`)) {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: true,
+                const constraints = {
+                    audio: selectedMicrophone ? { deviceId: { exact: selectedMicrophone } } : true,
                     video: type === 'video'
-                });
+                };
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 localStream = stream;
                 document.getElementById('local-video').srcObject = stream;
 
@@ -426,6 +454,10 @@ function initializeSocket() {
                 peerConnection.ontrack = (event) => {
                     document.getElementById('remote-video').srcObject = event.streams[0];
                 };
+
+                // Add caller to call participants
+                addCallParticipant(username, users[username]?.displayname || username, users[username]?.avatarImage);
+                addCallParticipant(currentUsername, users[currentUsername]?.displayname || currentUsername, users[currentUsername]?.avatarImage);
 
                 // Set remote description (offer)
                 await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -500,6 +532,16 @@ function initializeSocket() {
 
     socket.on('call_ended', () => {
         endCall();
+    });
+
+    socket.on('call_joined', (data) => {
+        const { username, displayName, avatarImage } = data;
+        addCallParticipant(username, displayName, avatarImage);
+    });
+
+    socket.on('call_left', (data) => {
+        const { username } = data;
+        removeCallParticipant(username);
     });
 }
 
@@ -1136,17 +1178,20 @@ function handleSaveSettings() {
     const newStatus = document.getElementById('settings-status').value;
     const newTheme = document.getElementById('settings-theme').value;
     const newBio = document.getElementById('settings-bio').value;
-    
+    const newMicrophone = document.getElementById('settings-microphone').value;
+
     if (newUsername && newUsername !== currentUsername) {
         // Mettre à jour le nom d'utilisateur (nécessite une implémentation backend)
         currentUsername = newUsername;
         document.getElementById('current-username-mini').textContent = currentUsername;
         document.getElementById('user-avatar-text').textContent = currentUsername.charAt(0).toUpperCase();
     }
-    
+
     userSettings.status = newStatus;
     userSettings.theme = newTheme;
     userSettings.bio = newBio;
+    userSettings.microphone = newMicrophone;
+    selectedMicrophone = newMicrophone;
     // L'avatarImage est déjà sauvegardé dans userSettings lors de l'upload
     
     // Mettre à jour la bio et l'avatar de l'utilisateur actuel dans la liste des utilisateurs
@@ -1468,7 +1513,11 @@ async function startCall() {
             });
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        const constraints = {
+            audio: selectedMicrophone ? { deviceId: { exact: selectedMicrophone } } : true,
+            video: false
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         localStream = stream;
         document.getElementById('local-video').srcObject = stream;
 
@@ -1497,6 +1546,18 @@ async function startCall() {
         peerConnection.ontrack = (event) => {
             document.getElementById('remote-video').srcObject = event.streams[0];
         };
+
+        // Add current user to call participants
+        addCallParticipant(currentUsername, users[currentUsername]?.displayname || currentUsername, users[currentUsername]?.avatarImage);
+
+        // Notify others that user joined call
+        socket.emit('call_joined', {
+            username: currentUsername,
+            displayName: users[currentUsername]?.displayname || currentUsername,
+            avatarImage: users[currentUsername]?.avatarImage,
+            target: currentPrivateChatUser || currentRoomId,
+            isPrivate: !!currentPrivateChatUser
+        });
 
         // Create offer
         const offer = await peerConnection.createOffer();
@@ -1534,7 +1595,11 @@ async function startVideoCall() {
             });
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        const constraints = {
+            audio: selectedMicrophone ? { deviceId: { exact: selectedMicrophone } } : true,
+            video: true
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         localStream = stream;
         document.getElementById('local-video').srcObject = stream;
 
@@ -1563,6 +1628,18 @@ async function startVideoCall() {
         peerConnection.ontrack = (event) => {
             document.getElementById('remote-video').srcObject = event.streams[0];
         };
+
+        // Add current user to call participants
+        addCallParticipant(currentUsername, users[currentUsername]?.displayname || currentUsername, users[currentUsername]?.avatarImage);
+
+        // Notify others that user joined call
+        socket.emit('call_joined', {
+            username: currentUsername,
+            displayName: users[currentUsername]?.displayname || currentUsername,
+            avatarImage: users[currentUsername]?.avatarImage,
+            target: currentPrivateChatUser || currentRoomId,
+            isPrivate: !!currentPrivateChatUser
+        });
 
         // Create offer
         const offer = await peerConnection.createOffer();
@@ -1598,10 +1675,20 @@ function endCall() {
     document.getElementById('remote-video').srcObject = null;
     isCallActive = false;
     
+    // Notify others that user left call
+    socket.emit('call_left', {
+        username: currentUsername,
+        target: currentPrivateChatUser || currentRoomId,
+        isPrivate: !!currentPrivateChatUser
+    });
+
+    // Clear call participants
+    clearCallParticipants();
+
     // Notifier les autres utilisateurs
     socket.emit('call_ended', {
-        username: currentUsername,
-        room_id: currentRoomId
+        target: currentPrivateChatUser || currentRoomId,
+        isPrivate: !!currentPrivateChatUser
     });
 }
 
@@ -1969,6 +2056,41 @@ function sendPrivateMessage(to, message) {
         to: to,
         message: message
     });
+}
+
+function addCallParticipant(username, displayName, avatarImage) {
+    const participantsContainer = document.getElementById('call-participants');
+    const participantElement = document.createElement('div');
+    participantElement.className = 'call-participant';
+    participantElement.dataset.username = username;
+
+    if (avatarImage) {
+        participantElement.innerHTML = `
+            <div class="participant-avatar" style="background-image: url(${avatarImage}); background-size: cover; background-position: center;"></div>
+            <span class="participant-name">${displayName}</span>
+        `;
+    } else {
+        participantElement.innerHTML = `
+            <div class="participant-avatar" style="background: #5865f2;">
+                <span>${displayName.charAt(0).toUpperCase()}</span>
+            </div>
+            <span class="participant-name">${displayName}</span>
+        `;
+    }
+
+    participantsContainer.appendChild(participantElement);
+}
+
+function removeCallParticipant(username) {
+    const participantsContainer = document.getElementById('call-participants');
+    const participantElement = participantsContainer.querySelector(`[data-username="${username}"]`);
+    if (participantElement) {
+        participantElement.remove();
+    }
+}
+
+function clearCallParticipants() {
+    document.getElementById('call-participants').innerHTML = '';
 }
 
 async function openServerSettings() {

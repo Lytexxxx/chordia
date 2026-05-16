@@ -330,6 +330,15 @@
                             </select>
                         </div>
                     </div>
+                    <div class="settings-section">
+                        <h4>Appels</h4>
+                        <div class="settings-item">
+                            <label>Microphone</label>
+                            <select id="settings-microphone">
+                                <option value="">Défaut</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-buttons">
                     <button type="button" id="cancel-settings-btn">Annuler</button>
@@ -359,6 +368,7 @@
                     <h3 id="call-status">Appel en cours...</h3>
                     <button class="close-modal-btn" id="close-call-btn">✕</button>
                 </div>
+                <div class="call-participants" id="call-participants"></div>
                 <div class="call-videos">
                     <video id="local-video" autoplay muted playsinline></video>
                     <video id="remote-video" autoplay playsinline></video>

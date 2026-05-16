@@ -1572,6 +1572,44 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('call_joined', (data) => {
+        const { username, displayName, avatarImage, target, isPrivate } = data;
+
+        if (isPrivate) {
+            // Private call - send to specific user
+            const targetUser = users[target];
+            if (targetUser && targetUser.socketId) {
+                io.to(targetUser.socketId).emit('call_joined', {
+                    username: username,
+                    displayName: displayName,
+                    avatarImage: avatarImage
+                });
+            }
+        } else {
+            // Room call - send to room
+            io.to(target).emit('call_joined', {
+                username: username,
+                displayName: displayName,
+                avatarImage: avatarImage
+            });
+        }
+    });
+
+    socket.on('call_left', (data) => {
+        const { username, target, isPrivate } = data;
+
+        if (isPrivate) {
+            // Private call - send to specific user
+            const targetUser = users[target];
+            if (targetUser && targetUser.socketId) {
+                io.to(targetUser.socketId).emit('call_left', { username: username });
+            }
+        } else {
+            // Room call - send to room
+            io.to(target).emit('call_left', { username: username });
+        }
+    });
+
     socket.on('update_status', (data) => {
         const { username, status } = data;
         

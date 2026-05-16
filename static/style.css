@@ -1037,6 +1037,39 @@ html {
     margin-bottom: 1rem;
 }
 
+.call-participants {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.call-participant {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background: rgba(88, 101, 242, 0.1);
+    border-radius: 20px;
+}
+
+.participant-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.participant-name {
+    color: #fff;
+    font-size: 14px;
+}
+
 .call-videos {
     display: grid;
     grid-template-columns: 1fr 1fr;
