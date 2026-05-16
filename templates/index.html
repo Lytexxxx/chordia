@@ -221,10 +221,11 @@
                     <div id="typing-indicator" class="typing-indicator hidden"></div>
                     
                     <form id="message-form" class="message-form">
-                        <button type="button" class="attach-btn">➕</button>
+                        <button type="button" class="attach-btn" id="attach-btn">➕</button>
+                        <input type="file" id="file-input" accept="image/*,audio/*,video/*" style="display: none;">
                         <input type="text" id="message-input" placeholder="Envoyer un message dans #général" autocomplete="off">
                         <div class="message-actions">
-                            <button type="button" class="emoji-btn">�</button>
+                            <button type="button" class="emoji-btn">😀</button>
                         </div>
                     </form>
                 </div>

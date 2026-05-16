@@ -8,6 +8,7 @@ let typingTimeout;
 let currentPrivateChatUser = null;
 let currentServerLogo = null;
 let friendsData = {};
+let selectedFile = null;
 
 // Charger les paramètres depuis localStorage
 const savedSettings = localStorage.getItem('userSettings');
@@ -146,6 +147,13 @@ function setupEventListeners() {
     
     // Messages
     document.getElementById('message-form').addEventListener('submit', handleSendMessage);
+
+    // File attachment
+    document.getElementById('attach-btn').addEventListener('click', () => {
+        document.getElementById('file-input').click();
+    });
+
+    document.getElementById('file-input').addEventListener('change', handleFileSelect);
     
     // Toggle members sidebar
     document.getElementById('members-toggle-btn').addEventListener('click', () => {
@@ -712,19 +720,57 @@ async function loadMessages(roomId) {
 
 function addMessage(message, animate = true) {
     const messagesContainer = document.getElementById('messages-container');
-    
+
     const messageElement = document.createElement('div');
     messageElement.className = 'message';
-    
-    const time = new Date(message.timestamp).toLocaleTimeString('fr-FR', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
+
+    const time = new Date(message.timestamp).toLocaleTimeString('fr-FR', {
+        hour: '2-digit',
+        minute: '2-digit'
     });
-    
+
     // Récupérer le displayname si disponible
     const user = users[message.username];
     const displayName = user ? user.displayname : message.username;
-    
+
+    let messageContent = '';
+
+    if (message.file) {
+        // Handle file attachment
+        const fileType = message.file.type;
+        if (fileType.startsWith('image/')) {
+            messageContent = `
+                <div class="message-text">
+                    ${message.message ? escapeHtml(message.message) + '<br>' : ''}
+                    <img src="${message.file.data}" alt="${escapeHtml(message.file.name)}" style="max-width: 100%; max-height: 300px; border-radius: 8px; margin-top: 8px;">
+                </div>
+            `;
+        } else if (fileType.startsWith('video/')) {
+            messageContent = `
+                <div class="message-text">
+                    ${message.message ? escapeHtml(message.message) + '<br>' : ''}
+                    <video src="${message.file.data}" controls style="max-width: 100%; max-height: 300px; border-radius: 8px; margin-top: 8px;"></video>
+                </div>
+            `;
+        } else if (fileType.startsWith('audio/')) {
+            messageContent = `
+                <div class="message-text">
+                    ${message.message ? escapeHtml(message.message) + '<br>' : ''}
+                    <audio src="${message.file.data}" controls style="width: 100%; margin-top: 8px;"></audio>
+                </div>
+            `;
+        } else {
+            messageContent = `
+                <div class="message-text">
+                    ${message.message ? escapeHtml(message.message) + '<br>' : ''}
+                    <a href="${message.file.data}" download="${escapeHtml(message.file.name)}" style="color: #5865f2; text-decoration: underline;">📎 ${escapeHtml(message.file.name)}</a>
+                </div>
+            `;
+        }
+    } else {
+        messageContent = `<div class="message-text">${escapeHtml(message.message)}</div>`;
+    }
+
     messageElement.innerHTML = `
         <div class="message-avatar">
             <span>${displayName.charAt(0).toUpperCase()}</span>
@@ -734,14 +780,14 @@ function addMessage(message, animate = true) {
                 <span class="message-username">${displayName}</span>
                 <span class="message-time">${time}</span>
             </div>
-            <div class="message-text">${escapeHtml(message.message)}</div>
+            ${messageContent}
         </div>
     `;
-    
+
     if (!animate) {
         messageElement.style.animation = 'none';
     }
-    
+
     messagesContainer.appendChild(messageElement);
     scrollToBottom();
 }
@@ -763,19 +809,81 @@ function addSystemMessage(text) {
 
 function handleSendMessage(e) {
     e.preventDefault();
-    
     const messageInput = document.getElementById('message-input');
     const message = messageInput.value.trim();
-    
-    if (!message || !currentRoomId) return;
-    
-    socket.emit('send_message', {
+
+    if (!message && !selectedFile) return;
+
+    if (selectedFile) {
+        // Send file
+        sendFileMessage(message);
+    } else {
+        if (currentPrivateChatUser) {
+            // Envoyer message privé
+            sendPrivateMessage(currentPrivateChatUser, message);
+        } else {
+            // Envoyer message dans le salon
+            socket.emit('send_message', {
+                username: currentUsername,
+                room_id: currentRoomId,
+                message: message
+            });
+        }
+    }
+
+    messageInput.value = '';
+    selectedFile = null;
+}
+
+function handleFileSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+        alert('Le fichier est trop grand (max 10MB)');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        selectedFile = {
+            name: file.name,
+            type: file.type,
+            data: event.target.result
+        };
+
+        // Show preview in message input
+        const messageInput = document.getElementById('message-input');
+        messageInput.placeholder = `Fichier sélectionné: ${file.name}`;
+    };
+    reader.readAsDataURL(file);
+}
+
+async function sendFileMessage(textMessage) {
+    if (!selectedFile) return;
+
+    const messageData = {
         username: currentUsername,
         room_id: currentRoomId,
-        message: message
-    });
-    
-    messageInput.value = '';
+        message: textMessage || '',
+        file: {
+            name: selectedFile.name,
+            type: selectedFile.type,
+            data: selectedFile.data
+        }
+    };
+
+    if (currentPrivateChatUser) {
+        messageData.to = currentPrivateChatUser;
+        await fetch('/private_message_file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(messageData)
+        });
+    } else {
+        socket.emit('send_message', messageData);
+    }
 }
 
 function handleTyping() {
@@ -1468,19 +1576,19 @@ async function loadPrivateMessages(friendUsername) {
 
 function addPrivateMessage(message, animate = true) {
     const messagesContainer = document.getElementById('private-messages-list');
-    
+
     const messageElement = document.createElement('div');
     messageElement.className = 'private-message';
-    
-    const time = new Date(message.timestamp).toLocaleTimeString('fr-FR', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
+
+    const time = new Date(message.timestamp).toLocaleTimeString('fr-FR', {
+        hour: '2-digit',
+        minute: '2-digit'
     });
-    
+
     const isOwnMessage = message.from === currentUsername;
     const user = users[message.from] || users[message.to];
     const displayName = isOwnMessage ? currentDisplayname : (user ? user.displayname : message.from);
-    
+
     let avatarStyle = `background: #5865f2`;
     let avatarText = `<span>${displayName.charAt(0).toUpperCase()}</span>`;
     const avatarImage = isOwnMessage ? userSettings.avatarImage : (user ? user.avatarImage : null);
@@ -1488,7 +1596,45 @@ function addPrivateMessage(message, animate = true) {
         avatarStyle = `background-image: url(${avatarImage}); background-size: cover; background-position: center;`;
         avatarText = '';
     }
-    
+
+    let messageContent = '';
+
+    if (message.file) {
+        // Handle file attachment
+        const fileType = message.file.type;
+        if (fileType.startsWith('image/')) {
+            messageContent = `
+                <div class="private-message-text">
+                    ${message.message ? escapeHtml(message.message) + '<br>' : ''}
+                    <img src="${message.file.data}" alt="${escapeHtml(message.file.name)}" style="max-width: 100%; max-height: 300px; border-radius: 8px; margin-top: 8px;">
+                </div>
+            `;
+        } else if (fileType.startsWith('video/')) {
+            messageContent = `
+                <div class="private-message-text">
+                    ${message.message ? escapeHtml(message.message) + '<br>' : ''}
+                    <video src="${message.file.data}" controls style="max-width: 100%; max-height: 300px; border-radius: 8px; margin-top: 8px;"></video>
+                </div>
+            `;
+        } else if (fileType.startsWith('audio/')) {
+            messageContent = `
+                <div class="private-message-text">
+                    ${message.message ? escapeHtml(message.message) + '<br>' : ''}
+                    <audio src="${message.file.data}" controls style="width: 100%; margin-top: 8px;"></audio>
+                </div>
+            `;
+        } else {
+            messageContent = `
+                <div class="private-message-text">
+                    ${message.message ? escapeHtml(message.message) + '<br>' : ''}
+                    <a href="${message.file.data}" download="${escapeHtml(message.file.name)}" style="color: #5865f2; text-decoration: underline;">📎 ${escapeHtml(message.file.name)}</a>
+                </div>
+            `;
+        }
+    } else {
+        messageContent = `<div class="private-message-text">${escapeHtml(message.message)}</div>`;
+    }
+
     messageElement.innerHTML = `
         <div class="private-message-avatar" style="${avatarStyle}">
             ${avatarText}
@@ -1498,14 +1644,14 @@ function addPrivateMessage(message, animate = true) {
                 <span class="private-message-username">${displayName}</span>
                 <span class="private-message-time">${time}</span>
             </div>
-            <div class="private-message-text">${escapeHtml(message.message)}</div>
+            ${messageContent}
         </div>
     `;
-    
+
     if (!animate) {
         messageElement.style.animation = 'none';
     }
-    
+
     messagesContainer.appendChild(messageElement);
     scrollToPrivateBottom();
 }

@@ -175,6 +175,47 @@ app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Upload file in private message
+app.post('/private_message_file', async (req, res) => {
+    const { from, to, message, file } = req.body;
+
+    if (!from || !to || !file) {
+        return res.status(400).json({ success: false, message: "Expéditeur, destinataire et fichier requis" });
+    }
+
+    try {
+        const conversationKey = [from, to].sort().join('_');
+
+        if (!privateMessages[conversationKey]) {
+            privateMessages[conversationKey] = [];
+        }
+
+        const result = await pool.query(
+            'INSERT INTO private_messages (from_username, to_username, message) VALUES ($1, $2, $3) RETURNING *',
+            [from, to, message]
+        );
+
+        const msgData = {
+            id: result.rows[0].id,
+            from: result.rows[0].from_username,
+            to: result.rows[0].to_username,
+            message: result.rows[0].message,
+            timestamp: result.rows[0].timestamp,
+            file: file
+        };
+
+        privateMessages[conversationKey].push(msgData);
+
+        // Notifier les deux utilisateurs via socket
+        io.emit('private_message', msgData);
+
+        res.json({ success: true, message: msgData });
+    } catch (error) {
+        console.error('Erreur lors de l\'envoi du message privé avec fichier:', error);
+        res.status(500).json({ success: false, message: "Erreur lors de l'envoi du message privé" });
+    }
+});
+
 // Stockage en mémoire pour la version locale (cache)
 const users = {};
 const servers = {};
@@ -1322,18 +1363,22 @@ io.on('connection', (socket) => {
     });
     
     socket.on('send_message', (data) => {
-        const { username, room_id, message } = data;
-        
-        if (!username || !room_id || !message) return;
-        
+        const { username, room_id, message, file } = data;
+
+        if (!username || !room_id || !message && !file) return;
+
         const msgData = {
             id: (messages[room_id]?.length || 0) + 1,
             username: username,
-            message: message,
+            message: message || '',
             room_id: room_id,
             timestamp: new Date().toISOString()
         };
-        
+
+        if (file) {
+            msgData.file = file;
+        }
+
         if (!messages[room_id]) {
             messages[room_id] = [];
         }
