@@ -543,6 +543,11 @@ function initializeSocket() {
         const { username } = data;
         removeCallParticipant(username);
     });
+
+    socket.on('call_mute_status', (data) => {
+        const { username, isMuted } = data;
+        setParticipantMuted(username, isMuted);
+    });
 }
 
 function showMainScreen() {
@@ -1699,6 +1704,17 @@ function toggleMute() {
             audioTrack.enabled = !audioTrack.enabled;
             isMuted = !audioTrack.enabled;
             document.getElementById('mute-btn').classList.toggle('muted', isMuted);
+
+            // Update local participant mute status
+            setParticipantMuted(currentUsername, isMuted);
+
+            // Notify others of mute status change
+            socket.emit('call_mute_status', {
+                username: currentUsername,
+                isMuted: isMuted,
+                target: currentPrivateChatUser || currentRoomId,
+                isPrivate: !!currentPrivateChatUser
+            });
         }
     }
 }
@@ -2063,11 +2079,15 @@ function addCallParticipant(username, displayName, avatarImage) {
     const participantElement = document.createElement('div');
     participantElement.className = 'call-participant';
     participantElement.dataset.username = username;
+    participantElement.dataset.muted = 'false';
 
     if (avatarImage) {
         participantElement.innerHTML = `
             <div class="participant-avatar" style="background-image: url(${avatarImage}); background-size: cover; background-position: center;"></div>
             <span class="participant-name">${displayName}</span>
+            <div class="participant-volume-control hidden">
+                <input type="range" class="volume-slider" min="0" max="1" step="0.1" value="1">
+            </div>
         `;
     } else {
         participantElement.innerHTML = `
@@ -2075,8 +2095,25 @@ function addCallParticipant(username, displayName, avatarImage) {
                 <span>${displayName.charAt(0).toUpperCase()}</span>
             </div>
             <span class="participant-name">${displayName}</span>
+            <div class="participant-volume-control hidden">
+                <input type="range" class="volume-slider" min="0" max="1" step="0.1" value="1">
+            </div>
         `;
     }
+
+    // Add click handler for volume control
+    participantElement.addEventListener('click', (e) => {
+        if (e.target.classList.contains('volume-slider')) return;
+        const volumeControl = participantElement.querySelector('.participant-volume-control');
+        volumeControl.classList.toggle('hidden');
+    });
+
+    // Add volume slider handler
+    const volumeSlider = participantElement.querySelector('.volume-slider');
+    volumeSlider.addEventListener('input', (e) => {
+        const volume = parseFloat(e.target.value);
+        adjustParticipantVolume(username, volume);
+    });
 
     participantsContainer.appendChild(participantElement);
 }
@@ -2091,6 +2128,39 @@ function removeCallParticipant(username) {
 
 function clearCallParticipants() {
     document.getElementById('call-participants').innerHTML = '';
+}
+
+function adjustParticipantVolume(username, volume) {
+    const remoteVideo = document.getElementById('remote-video');
+    if (remoteVideo && remoteVideo.srcObject) {
+        const audioTracks = remoteVideo.srcObject.getAudioTracks();
+        audioTracks.forEach(track => {
+            if (track.enabled) {
+                // WebRTC doesn't support per-track volume control directly
+                // We need to use the Web Audio API
+                if (!remoteVideo.audioContext) {
+                    remoteVideo.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    remoteVideo.source = remoteVideo.audioContext.createMediaStreamSource(remoteVideo.srcObject);
+                    remoteVideo.gainNode = remoteVideo.audioContext.createGain();
+                    remoteVideo.source.connect(remoteVideo.gainNode);
+                    remoteVideo.gainNode.connect(remoteVideo.audioContext.destination);
+                }
+                remoteVideo.gainNode.gain.value = volume;
+            }
+        });
+    }
+}
+
+function setParticipantMuted(username, isMuted) {
+    const participantElement = document.querySelector(`[data-username="${username}"]`);
+    if (participantElement) {
+        participantElement.dataset.muted = isMuted ? 'true' : 'false';
+        if (isMuted) {
+            participantElement.classList.add('muted');
+        } else {
+            participantElement.classList.remove('muted');
+        }
+    }
 }
 
 async function openServerSettings() {

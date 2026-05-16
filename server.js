@@ -1610,6 +1610,27 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('call_mute_status', (data) => {
+        const { username, isMuted, target, isPrivate } = data;
+
+        if (isPrivate) {
+            // Private call - send to specific user
+            const targetUser = users[target];
+            if (targetUser && targetUser.socketId) {
+                io.to(targetUser.socketId).emit('call_mute_status', {
+                    username: username,
+                    isMuted: isMuted
+                });
+            }
+        } else {
+            // Room call - send to room
+            io.to(target).emit('call_mute_status', {
+                username: username,
+                isMuted: isMuted
+            });
+        }
+    });
+
     socket.on('update_status', (data) => {
         const { username, status } = data;
         

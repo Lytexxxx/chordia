@@ -1070,6 +1070,23 @@ html {
     font-size: 14px;
 }
 
+.participant-volume-control {
+    margin-left: 0.5rem;
+}
+
+.volume-slider {
+    width: 80px;
+    cursor: pointer;
+}
+
+.call-participant.muted {
+    background: rgba(255, 0, 0, 0.3);
+}
+
+.call-participant.muted .participant-avatar {
+    border: 2px solid red;
+}
+
 .call-videos {
     display: grid;
     grid-template-columns: 1fr 1fr;
