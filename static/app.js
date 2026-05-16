@@ -9,6 +9,7 @@ let currentPrivateChatUser = null;
 let currentServerLogo = null;
 let friendsData = {};
 let selectedFile = null;
+let selectedPrivateFile = null;
 
 // Charger les paramètres depuis localStorage
 const savedSettings = localStorage.getItem('userSettings');
@@ -154,6 +155,13 @@ function setupEventListeners() {
     });
 
     document.getElementById('file-input').addEventListener('change', handleFileSelect);
+
+    // Private file attachment
+    document.getElementById('private-attach-btn').addEventListener('click', () => {
+        document.getElementById('private-file-input').click();
+    });
+
+    document.getElementById('private-file-input').addEventListener('change', handlePrivateFileSelect);
     
     // Toggle members sidebar
     document.getElementById('members-toggle-btn').addEventListener('click', () => {
@@ -860,6 +868,31 @@ function handleFileSelect(e) {
     reader.readAsDataURL(file);
 }
 
+function handlePrivateFileSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+        alert('Le fichier est trop grand (max 10MB)');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        selectedPrivateFile = {
+            name: file.name,
+            type: file.type,
+            data: event.target.result
+        };
+
+        // Show preview in message input
+        const messageInput = document.getElementById('private-message-input');
+        messageInput.placeholder = `Fichier sélectionné: ${file.name}`;
+    };
+    reader.readAsDataURL(file);
+}
+
 async function sendFileMessage(textMessage) {
     if (!selectedFile) return;
 
@@ -884,6 +917,27 @@ async function sendFileMessage(textMessage) {
     } else {
         socket.emit('send_message', messageData);
     }
+}
+
+async function sendPrivateFileMessage(textMessage) {
+    if (!selectedPrivateFile) return;
+
+    const messageData = {
+        from: currentUsername,
+        to: currentPrivateChatUser,
+        message: textMessage || '',
+        file: {
+            name: selectedPrivateFile.name,
+            type: selectedPrivateFile.type,
+            data: selectedPrivateFile.data
+        }
+    };
+
+    await fetch('/private_message_file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(messageData)
+    });
 }
 
 function handleTyping() {
@@ -1658,26 +1712,23 @@ function addPrivateMessage(message, animate = true) {
 
 async function handleSendPrivateMessage(e) {
     e.preventDefault();
-    
+
     const messageInput = document.getElementById('private-message-input');
     const message = messageInput.value.trim();
-    
-    if (!message || !currentPrivateChatUser) return;
-    
+
+    if (!message && !selectedPrivateFile) return;
+
     try {
-        const response = await fetch('/private_message', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ from: currentUsername, to: currentPrivateChatUser, message })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            messageInput.value = '';
+        if (selectedPrivateFile) {
+            // Send file
+            await sendPrivateFileMessage(message);
         } else {
-            alert(data.message);
+            await sendPrivateMessage(currentPrivateChatUser, message);
         }
+
+        messageInput.value = '';
+        selectedPrivateFile = null;
+        messageInput.placeholder = 'Envoyer un message privé...';
     } catch (error) {
         console.error('Erreur lors de l\'envoi du message privé:', error);
     }
