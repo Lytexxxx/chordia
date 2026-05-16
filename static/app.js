@@ -380,6 +380,12 @@ function initializeSocket() {
         }
     });
 
+    // Incoming call notification
+    socket.on('incoming_call', (data) => {
+        const { from, type } = data;
+        alert(`${from} vous appelle (${type === 'video' ? 'vidéo' : 'audio'})`);
+    });
+
     // WebRTC signaling
     socket.on('call_offer', async (data) => {
         const { offer, username, callerSocketId, type } = data;
@@ -1400,6 +1406,22 @@ function showProfile(user) {
 // Fonctions WebRTC
 async function startCall() {
     try {
+        // Notify target user first
+        if (currentPrivateChatUser) {
+            socket.emit('call_user', {
+                from: currentUsername,
+                to: currentPrivateChatUser,
+                type: 'audio'
+            });
+        } else {
+            // For room calls, notify all users in room
+            socket.emit('call_user', {
+                from: currentUsername,
+                to: currentRoomId,
+                type: 'audio'
+            });
+        }
+
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
         localStream = stream;
         document.getElementById('local-video').srcObject = stream;
@@ -1450,6 +1472,22 @@ async function startCall() {
 
 async function startVideoCall() {
     try {
+        // Notify target user first
+        if (currentPrivateChatUser) {
+            socket.emit('call_user', {
+                from: currentUsername,
+                to: currentPrivateChatUser,
+                type: 'video'
+            });
+        } else {
+            // For room calls, notify all users in room
+            socket.emit('call_user', {
+                from: currentUsername,
+                to: currentRoomId,
+                type: 'video'
+            });
+        }
+
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
         localStream = stream;
         document.getElementById('local-video').srcObject = stream;

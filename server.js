@@ -1451,6 +1451,24 @@ io.on('connection', (socket) => {
         socket.to(room_id).emit('user_typing', { username, is_typing });
     });
 
+    // Call user notification
+    socket.on('call_user', (data) => {
+        const { from, to, type } = data;
+
+        console.log(`${from} appelle ${to}`);
+
+        if (users[to] && users[to].socketId) {
+            io.to(users[to].socketId).emit('incoming_call', {
+                from: from,
+                type: type
+            });
+
+            console.log(`Appel envoyé à ${to}`);
+        } else {
+            console.log(`Utilisateur ${to} hors ligne`);
+        }
+    });
+
     // WebRTC signaling
     socket.on('call_offer', async (data) => {
         const { offer, username, target, isPrivate, type } = data;
