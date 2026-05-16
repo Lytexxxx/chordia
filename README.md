@@ -1,64 +1,56 @@
 # 🎵 Chordia
 
-Application de chat inspirée de Discord pour discuter avec vos amis.
+Chordia est une application de chat en temps réel inspirée de Discord, développée avec Node.js, Express, Socket.IO et PostgreSQL.  
+Elle permet de créer des serveurs, discuter dans des salons, envoyer des messages privés et gérer des amis dans une interface moderne et fluide.
 
-## Installation
+---
 
-1. Installer les dépendances:
-```bash
-npm install
-```
+# 🌐 Accéder à Chordia
 
-2. Configuration de la base de données PostgreSQL:
+Connectez-vous directement ici :
 
-**Option A: Déploiement sur Render**
-- Créez une base de données PostgreSQL sur Render
-- Ajoutez la variable d'environnement `DATABASE_URL` dans les settings de Render
-- Redéployez l'application
+https://chordia.onrender.com/
 
-**Option B: Développement local**
-- Installez PostgreSQL sur votre machine
-- Créez une base de données nommée `chordia`
-- Initialisez le schéma de base de données:
-```bash
-node init-db.js
-```
+---
 
-3. Lancer l'application:
-```bash
-npm start
-```
+# ✨ Fonctionnalités
 
-Ou double-cliquez sur `start.bat`
+- 💬 Messagerie en temps réel
+- 🏠 Création de serveurs et salons
+- 👥 Système d'amis et demandes d'amis
+- ✉️ Messages privés
+- 🖼️ Profils personnalisés avec avatars et bannières
+- ⚡ Communication en temps réel
+- 🗄️ Sauvegarde des données
+- 🎨 Interface moderne et responsive
 
-4. Ouvrir votre navigateur sur: http://localhost:3000
+---
 
-## Déploiement sur Render
+# 🛠️ Technologies utilisées
 
-1. Connectez votre repository GitHub à Render
-2. Créez un nouveau Web Service
-3. Configurez les variables d'environnement:
-   - `DATABASE_URL`: URL de connexion PostgreSQL (fournie par Render)
-4. Déployez
+- Node.js
+- Express.js
+- Socket.IO
+- PostgreSQL
+- HTML / CSS / JavaScript
 
-## Fonctionnalités
+---
 
-- ✅ Chat en temps réel
-- ✅ Création de salons
-- ✅ Liste des utilisateurs en ligne
-- ✅ Indicateur de frappe
-- ✅ Interface moderne et intuitive
-- ✅ Persistance des données avec PostgreSQL
-- ✅ Upload d'images de profil et bannières
-
-## Utilisation
-
-1. Entrez votre nom d'utilisateur pour vous connecter
-2. Créez ou rejoignez un salon
-3. Discutez avec vos amis en temps réel!
-
-## Prochaines fonctionnalités
+# 📌 Roadmap
 
 - 📞 Appels vocaux
 - 📹 Appels vidéo
 - 📁 Partage de fichiers
+- 🔔 Notifications en temps réel
+
+---
+
+# 👨‍💻 Auteur
+
+Développé par Lytexxx.
+
+---
+
+# 📄 Licence
+
+Ce projet est sous licence MIT.
