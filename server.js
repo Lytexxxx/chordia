@@ -1300,12 +1300,11 @@ io.on('connection', (socket) => {
         }
         
         socket.join(room_id);
-        
+
         if (rooms[room_id] && !rooms[room_id].members.includes(username)) {
             rooms[room_id].members.push(username);
-            saveRoomsToFile();
         }
-        
+
         io.to(room_id).emit('user_joined', { username: username, room_id: room_id });
         io.emit('user_status', { username: username, status: 'online' });
     });
@@ -1314,12 +1313,11 @@ io.on('connection', (socket) => {
         const { username, room_id } = data;
         
         socket.leave(room_id);
-        
+
         if (rooms[room_id]) {
             rooms[room_id].members = rooms[room_id].members.filter(m => m !== username);
-            saveRoomsToFile();
         }
-        
+
         io.to(room_id).emit('user_left', { username: username, room_id: room_id });
     });
     
@@ -1339,11 +1337,9 @@ io.on('connection', (socket) => {
         if (!messages[room_id]) {
             messages[room_id] = [];
         }
-        
+
         messages[room_id].push(msgData);
-        
-        saveMessagesToFile();
-        
+
         io.to(room_id).emit('new_message', msgData);
     });
     
