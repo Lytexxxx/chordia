@@ -17,6 +17,7 @@ let peerConnection = null;
 let isCallActive = false;
 let isMuted = false;
 let isVideoEnabled = true;
+let pendingCandidates = [];
 const rtcServers = {
     iceServers: [
         { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }
@@ -389,10 +390,10 @@ function initializeSocket() {
 
     // WebRTC signaling
     socket.on('call_offer', async (data) => {
-        const { offer, username, callerSocketId, type } = data;
+        try {
+            const { offer, username, callerSocketId, type } = data;
 
-        if (confirm(`${username} vous appelle (${type === 'video' ? 'vidéo' : 'audio'}). Accepter?`)) {
-            try {
+            if (confirm(`${username} vous appelle (${type === 'video' ? 'vidéo' : 'audio'}). Accepter?`)) {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: true,
                     video: type === 'video'
@@ -429,6 +430,15 @@ function initializeSocket() {
                 // Set remote description (offer)
                 await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
 
+                // ajouter ICE en attente
+                for (const candidate of pendingCandidates) {
+                    await peerConnection.addIceCandidate(
+                        new RTCIceCandidate(candidate)
+                    );
+                }
+
+                pendingCandidates = [];
+
                 // Create answer
                 const answer = await peerConnection.createAnswer();
                 await peerConnection.setLocalDescription(answer);
@@ -438,21 +448,54 @@ function initializeSocket() {
                     answer: answer,
                     callerSocketId: callerSocketId
                 });
-            } catch (error) {
-                console.error('Erreur lors de la réponse à l\'appel:', error);
-                alert('Impossible de répondre à l\'appel');
             }
+        } catch (err) {
+            console.error('Erreur offre WebRTC:', err);
         }
     });
 
     socket.on('call_answer', async (data) => {
-        const { answer } = data;
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        try {
+            if (!peerConnection) return;
+
+            // éviter le double setRemoteDescription
+            if (peerConnection.signalingState === 'stable') {
+                return;
+            }
+
+            await peerConnection.setRemoteDescription(
+                new RTCSessionDescription(data.answer)
+            );
+
+            // ajouter les ICE en attente
+            for (const candidate of pendingCandidates) {
+                await peerConnection.addIceCandidate(
+                    new RTCIceCandidate(candidate)
+                );
+            }
+
+            pendingCandidates = [];
+        } catch (err) {
+            console.error('Erreur réponse WebRTC:', err);
+        }
     });
 
     socket.on('ice_candidate', async (data) => {
-        const { candidate } = data;
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        try {
+            if (!peerConnection) return;
+
+            // Si remoteDescription pas encore prête
+            if (!peerConnection.remoteDescription) {
+                pendingCandidates.push(data.candidate);
+                return;
+            }
+
+            await peerConnection.addIceCandidate(
+                new RTCIceCandidate(data.candidate)
+            );
+        } catch (err) {
+            console.error('Erreur ICE candidate:', err);
+        }
     });
 
     socket.on('call_ended', () => {
